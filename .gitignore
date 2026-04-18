@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# local env and secrets
+**/.env.local
+**/.env.*.local
+**/.dev.vars
+**/.env
+
+# dependencies
+**/node_modules/
+
+# build outputs
+**/.next/
+**/out/
+**/build/
+**/coverage/
+**/.wrangler/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# misc
+*.pem
+*.tsbuildinfo
+
+# local docs and screenshots
+**/.obsidian/

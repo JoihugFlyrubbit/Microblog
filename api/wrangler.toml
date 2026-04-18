@@ -1,0 +1,29 @@
+name = "microblog-api"
+main = "src/index.ts"
+compatibility_date = "2026-04-12"
+
+# Default variables (used by wrangler dev)
+[vars]
+ENVIRONMENT = "development"
+ALLOW_ADMIN_BOOTSTRAP = "true"
+COS_BUCKET = "your-bucket"
+COS_REGION = "ap-beijing"
+
+# D1 Database binding (local development)
+[[d1_databases]]
+binding = "DB"
+database_name = "microblog-db-local"
+database_id = "local"
+
+[env.production]
+vars = { ENVIRONMENT = "production", ALLOW_ADMIN_BOOTSTRAP = "false" }
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "microblog-db"
+database_id = "your-database-id-here"
+
+# Secrets (set via wrangler secret put):
+# - SESSION_SECRET
+# - COS_SECRET_ID
+# - COS_SECRET_KEY

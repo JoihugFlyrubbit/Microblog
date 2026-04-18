@@ -1,0 +1,31 @@
+{
+  "name": "microblog-api",
+  "version": "1.0.0",
+  "description": "Microblog API with Hono + Cloudflare Workers",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create microblog-db",
+    "db:migrate": "wrangler d1 migrations apply microblog-db",
+    "db:generate": "wrangler d1 migrations create microblog-db init",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@hono/zod-validator": "^0.7.6",
+    "bcryptjs": "^3.0.3",
+    "hono": "^4.12.12",
+    "iron-session": "^8.0.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260412.1",
+    "@types/bcryptjs": "^2.4.6",
+    "typescript": "^6.0.2",
+    "wrangler": "^4.81.1"
+  }
+}

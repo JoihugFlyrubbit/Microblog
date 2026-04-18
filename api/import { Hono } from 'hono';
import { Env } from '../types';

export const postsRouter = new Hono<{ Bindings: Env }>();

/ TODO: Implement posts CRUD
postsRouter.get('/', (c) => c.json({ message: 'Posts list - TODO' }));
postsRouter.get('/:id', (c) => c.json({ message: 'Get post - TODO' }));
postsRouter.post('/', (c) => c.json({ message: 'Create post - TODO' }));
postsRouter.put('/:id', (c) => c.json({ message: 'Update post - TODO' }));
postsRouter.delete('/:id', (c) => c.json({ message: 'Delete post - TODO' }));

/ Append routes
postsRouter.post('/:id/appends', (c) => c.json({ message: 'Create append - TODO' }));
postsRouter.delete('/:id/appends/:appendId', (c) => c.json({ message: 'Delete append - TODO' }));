@@ -1,0 +1,15 @@
+import { Hono } from 'hono';
+import { Env } from '../types';
+
+export const postsRouter = new Hono<{ Bindings: Env }>();
+
+// TODO: Implement posts CRUD
+postsRouter.get('/', (c) => c.json({ message: 'Posts list - TODO' }));
+postsRouter.get('/:id', (c) => c.json({ message: 'Get post - TODO' }));
+postsRouter.post('/', (c) => c.json({ message: 'Create post - TODO' }));
+postsRouter.put('/:id', (c) => c.json({ message: 'Update post - TODO' }));
+postsRouter.delete('/:id', (c) => c.json({ message: 'Delete post - TODO' }));
+
+// Append routes
+postsRouter.post('/:id/appends', (c) => c.json({ message: 'Create append - TODO' }));
+postsRouter.delete('/:id/appends/:appendId', (c) => c.json({ message: 'Delete append - TODO' }));

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="120" fill="#f7f3ea" />
+  <circle cx="148" cy="168" r="44" fill="#f4c65d" />
+  <circle cx="242" cy="132" r="36" fill="#ef8f72" />
+  <circle cx="338" cy="174" r="42" fill="#64b7ea" />
+  <circle cx="402" cy="126" r="26" fill="#68c7b8" />
+  <path d="M92 316c0-20 16-36 36-36h256c20 0 36 16 36 36v48c0 20-16 36-36 36H128c-20 0-36-16-36-36v-48Z" fill="#1f2430" opacity=".96" />
+  <text x="106" y="366" fill="#fff8eb" font-family="'Avenir Next', 'Trebuchet MS', sans-serif" font-size="92" font-weight="700" letter-spacing="-6">Joi</text>
+</svg>

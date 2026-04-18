@@ -1,0 +1,8 @@
+{
+  "apiBase": "http://localhost:8787",
+  "vaultPath": "/path/to/your/obsidian-vault",
+  "outputPath": "Microblog/microblog-export.md",
+  "includePrivate": true,
+  "intervalSeconds": 60,
+  "password": "REPLACE_WITH_ADMIN_PASSWORD"
+}
