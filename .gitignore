@@ -26,5 +26,8 @@ yarn-error.log*
 *.pem
 *.tsbuildinfo
 
+# database backups (contain data, not code)
+**/backups/*.sql
+
 # local docs and screenshots
 **/.obsidian/
