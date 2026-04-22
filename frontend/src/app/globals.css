@@ -3,13 +3,13 @@
 @tailwind utilities;
 
 :root {
-  --background: #f7f3ea;
+  --background: #f6f6f6;
   --foreground: #1f2430;
   --surface: rgba(255, 255, 255, 0.88);
   --surface-strong: rgba(255, 255, 255, 0.96);
   --surface-border: rgba(255, 255, 255, 0.9);
-  --shadow-soft: 0 24px 48px rgba(98, 88, 62, 0.12);
-  --shadow-card: 0 20px 36px rgba(92, 89, 77, 0.14);
+  --shadow-soft: 0 24px 48px rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 20px 36px rgba(0, 0, 0, 0.1);
   --hero-yellow: #f4c65d;
   --hero-coral: #f08a76;
   --hero-mint: #65cfbd;
@@ -96,7 +96,7 @@ textarea:focus-visible {
   }
 
   .mobile-panel-body {
-    @apply border-t border-[#ebe4d4] px-4 pb-4 pt-3;
+    @apply border-t border-[#e5e5e5] px-4 pb-4 pt-3;
   }
 
   .glass-header {
