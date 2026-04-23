@@ -72,14 +72,14 @@ export function LoginScreen() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f7f3ea]">
+      <div className="min-h-screen flex items-center justify-center bg-[#f6f6f6]">
         <p className="text-gray-600">Loading...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#f7f3ea]">
+    <div className="min-h-screen bg-[#f6f6f6]">
       <header className="glass-header sticky top-0 z-30">
         <div className="shell flex items-center justify-between gap-4 py-3 sm:py-4">
           <h1 className="text-[1rem] font-medium tracking-[-0.03em] text-[#1f2430] sm:text-[1.15rem]">管理员登录</h1>

@@ -24,6 +24,7 @@ export function AdminHome() {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Filters>({});
   const [selectedPostId, setSelectedPostId] = useState<number | null>(null);
+  const [editingOnOpen, setEditingOnOpen] = useState(false);
   const [showPostForm, setShowPostForm] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -229,6 +230,7 @@ export function AdminHome() {
                     selectedDate={filters.selectedDate}
                     onDateSelect={handleDateSelect}
                     includePrivate
+                    refreshKey={refreshKey}
                   />
                 </div>
                 <div className="surface-card animate-rise-in p-5 transition-shadow duration-200 hover:shadow-[0_24px_42px_rgba(83,84,92,0.16)]" style={{ animationDelay: "80ms" }}>
@@ -236,6 +238,7 @@ export function AdminHome() {
                     selectedTag={filters.selectedTag}
                     onTagSelect={handleTagSelect}
                     includePrivate
+                    refreshKey={refreshKey}
                   />
                 </div>
                 <div className="surface-card animate-rise-in p-5 transition-shadow duration-200 hover:shadow-[0_24px_42px_rgba(83,84,92,0.16)]" style={{ animationDelay: "140ms" }}>
@@ -263,6 +266,7 @@ export function AdminHome() {
                     selectedDate={filters.selectedDate}
                     onDateSelect={handleDateSelect}
                     includePrivate
+                    refreshKey={refreshKey}
                   />
                 </div>
               </details>
@@ -276,6 +280,7 @@ export function AdminHome() {
                     selectedTag={filters.selectedTag}
                     onTagSelect={handleTagSelect}
                     includePrivate
+                    refreshKey={refreshKey}
                   />
                 </div>
               </details>
@@ -320,7 +325,8 @@ export function AdminHome() {
                 tag={filters.selectedTag}
                 canManage
                 onRefresh={() => setRefreshKey((value) => value + 1)}
-                onPostClick={(post: Post) => setSelectedPostId(post.id)}
+                onPostClick={(post: Post) => { setEditingOnOpen(false); setSelectedPostId(post.id); }}
+                onPostEdit={(post: Post) => { setEditingOnOpen(true); setSelectedPostId(post.id); }}
                 onTagClick={handlePostTagClick}
               />
             </div>
@@ -333,11 +339,12 @@ export function AdminHome() {
       {selectedPostId && (
         <PostDetailModal
           postId={selectedPostId}
-          onClose={() => setSelectedPostId(null)}
+          onClose={() => { setSelectedPostId(null); setEditingOnOpen(false); }}
           onDelete={handlePostDelete}
           onPinChange={() => setRefreshKey((value) => value + 1)}
           onTagClick={handlePostTagClick}
           canManage
+          initialEditing={editingOnOpen}
         />
       )}
     </div>

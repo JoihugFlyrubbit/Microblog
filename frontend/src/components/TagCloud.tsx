@@ -15,9 +15,10 @@ interface TagCloudProps {
   onTagSelect?: (tag?: string) => void;
   selectedTag?: string;
   includePrivate?: boolean;
+  refreshKey?: number;
 }
 
-export function TagCloud({ onTagSelect, selectedTag, includePrivate = false }: TagCloudProps) {
+export function TagCloud({ onTagSelect, selectedTag, includePrivate = false, refreshKey = 0 }: TagCloudProps) {
   const [tags, setTags] = useState<TagWithCount[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,7 +34,7 @@ export function TagCloud({ onTagSelect, selectedTag, includePrivate = false }: T
     } finally {
       setLoading(false);
     }
-  }, [includePrivate]);
+  }, [includePrivate, refreshKey]);
 
   useEffect(() => {
     loadTags();

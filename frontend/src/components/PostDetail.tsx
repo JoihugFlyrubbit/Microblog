@@ -13,9 +13,10 @@ interface PostDetailProps {
   onTagClick?: (tag: string) => void;
   onUpdate?: () => void;
   canManage?: boolean;
+  initialEditing?: boolean;
 }
 
-export function PostDetail({ postId, onClose, onDelete, onPinChange, onTagClick, onUpdate, canManage = false }: PostDetailProps) {
+export function PostDetail({ postId, onClose, onDelete, onPinChange, onTagClick, onUpdate, canManage = false, initialEditing = false }: PostDetailProps) {
   const [post, setPost] = useState<PostWithRelations | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +25,7 @@ export function PostDetail({ postId, onClose, onDelete, onPinChange, onTagClick,
   const [submittingAppend, setSubmittingAppend] = useState(false);
   const [togglingPin, setTogglingPin] = useState(false);
   const [deletingAppendId, setDeletingAppendId] = useState<number | null>(null);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(initialEditing);
 
   const loadPost = useCallback(async () => {
     setLoading(true);

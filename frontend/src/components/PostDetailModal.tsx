@@ -11,6 +11,7 @@ interface PostDetailModalProps {
   onPinChange?: () => void;
   onTagClick?: (tag: string) => void;
   canManage?: boolean;
+  initialEditing?: boolean;
 }
 
 export function PostDetailModal({
@@ -20,6 +21,7 @@ export function PostDetailModal({
   onPinChange,
   onTagClick,
   canManage = false,
+  initialEditing = false,
 }: PostDetailModalProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -45,6 +47,7 @@ export function PostDetailModal({
           onPinChange={onPinChange}
           onTagClick={onTagClick}
           canManage={canManage}
+          initialEditing={initialEditing}
         />
       </div>
     </div>,

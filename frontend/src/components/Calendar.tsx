@@ -14,9 +14,10 @@ interface CalendarProps {
   onDateSelect?: (date?: string) => void;
   selectedDate?: string;
   includePrivate?: boolean;
+  refreshKey?: number;
 }
 
-export function Calendar({ onDateSelect, selectedDate, includePrivate = false }: CalendarProps) {
+export function Calendar({ onDateSelect, selectedDate, includePrivate = false, refreshKey = 0 }: CalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [datesWithPosts, setDatesWithPosts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
@@ -45,7 +46,7 @@ export function Calendar({ onDateSelect, selectedDate, includePrivate = false }:
     } finally {
       setLoading(false);
     }
-  }, [includePrivate, year, month]);
+  }, [includePrivate, year, month, refreshKey]);
 
   useEffect(() => {
     loadDates();

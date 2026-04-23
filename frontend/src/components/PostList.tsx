@@ -12,10 +12,11 @@ interface PostListProps {
   canManage?: boolean;
   onRefresh?: () => void;
   onPostClick?: (post: Post) => void;
+  onPostEdit?: (post: Post) => void;
   onTagClick?: (tag: string) => void;
 }
 
-export function PostList({ date, tag, visibility = 'public', pinned, canManage = false, onRefresh, onPostClick, onTagClick }: PostListProps) {
+export function PostList({ date, tag, visibility = 'public', pinned, canManage = false, onRefresh, onPostClick, onPostEdit, onTagClick }: PostListProps) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [pagination, setPagination] = useState<PostsListResponse['pagination'] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,6 +105,7 @@ export function PostList({ date, tag, visibility = 'public', pinned, canManage =
             flushBottom
             canManage={canManage}
             onRefresh={onRefresh}
+            onEdit={onPostEdit ? () => onPostEdit(post) : undefined}
           />
         ))}
       </div>

@@ -15,10 +15,11 @@ interface PostCardProps {
   detail?: boolean;
   canManage?: boolean;
   onRefresh?: () => void;
+  onEdit?: () => void;
   carousel?: boolean;
 }
 
-export function PostCard({ post, onClick, compact = false, wideMedia = false, flushBottom = false, onTagClick, detail = false, canManage = false, onRefresh, carousel = false }: PostCardProps) {
+export function PostCard({ post, onClick, compact = false, wideMedia = false, flushBottom = false, onTagClick, detail = false, canManage = false, onRefresh, onEdit, carousel = false }: PostCardProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [lightboxScale, setLightboxScale] = useState(1);
   const [mounted, setMounted] = useState(false);
@@ -549,6 +550,18 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
               </svg>
             )}
           </button>
+          {onEdit && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onEdit();
+              }}
+              className="text-[#5d8fd6] hover:underline"
+            >
+              编辑
+            </button>
+          )}
           <button
             type="button"
             onClick={(event) => {
