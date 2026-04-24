@@ -93,6 +93,9 @@ export function PostList({ date, tag, visibility = 'public', pinned, canManage =
 
   return (
     <div className="space-y-4">
+      {pagination && (
+        <p className="text-sm text-soft">共 {pagination.total} 条</p>
+      )}
       {/* Posts */}
       <div className="space-y-4">
         {posts.map((post) => (

@@ -2,8 +2,64 @@
 
 import Image from "next/image";
 import { postsApi, Post, PostWithRelations } from "@/lib/api";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import ReactMarkdown, { Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
+
+function splitHashtags(text: string, onTagClick?: (tag: string) => void) {
+  const parts = text.split(/(#[\w一-龥]+)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('#') && part.length > 1) {
+      const tagName = part.slice(1);
+      return (
+        <span
+          key={i}
+          className="cursor-pointer text-[#5d8fd6] hover:underline"
+          onClick={(e) => {
+            e.stopPropagation();
+            onTagClick?.(tagName);
+          }}
+        >
+          {part}
+        </span>
+      );
+    }
+    return part;
+  });
+}
+
+function processChildren(children: React.ReactNode, onTagClick?: (tag: string) => void): React.ReactNode {
+  return React.Children.map(children, (child) => {
+    if (typeof child === 'string') {
+      return splitHashtags(child, onTagClick);
+    }
+    return child;
+  });
+}
+
+function MarkdownContent({ content, onTagClick }: { content: string; onTagClick?: (tag: string) => void }) {
+  const wrap = (children: React.ReactNode) => processChildren(children, onTagClick);
+  const components: Components = {
+    p: ({ children }) => <p className="my-3 first:mt-0 last:mb-0">{wrap(children)}</p>,
+    h1: ({ children }) => <h1 className="text-[1.4rem] font-semibold leading-snug mt-5 mb-2 first:mt-0">{wrap(children)}</h1>,
+    h2: ({ children }) => <h2 className="text-[1.2rem] font-semibold leading-snug mt-4 mb-2 first:mt-0">{wrap(children)}</h2>,
+    h3: ({ children }) => <h3 className="text-[1.08rem] font-semibold leading-snug mt-3 mb-1 first:mt-0">{wrap(children)}</h3>,
+    h4: ({ children }) => <h4 className="text-[1rem] font-semibold leading-snug mt-3 mb-1 first:mt-0">{wrap(children)}</h4>,
+    ol: ({ children }) => <ol className="list-decimal pl-6 space-y-1 my-3">{children}</ol>,
+    ul: ({ children }) => <ul className="list-disc pl-6 space-y-1 my-3">{children}</ul>,
+    li: ({ children }) => <li>{wrap(children)}</li>,
+    blockquote: ({ children }) => <blockquote className="border-l-4 border-[#d9dce4] pl-4 my-3 text-[#5a6172]">{children}</blockquote>,
+    code: ({ children }) => <code className="rounded bg-[#f1f3f7] px-1 py-0.5 text-[0.92em]">{children}</code>,
+    a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" className="text-[#5d8fd6] hover:underline" onClick={(e) => e.stopPropagation()}>{wrap(children)}</a>,
+  };
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={components}>
+      {content}
+    </ReactMarkdown>
+  );
+}
 
 interface PostCardProps {
   post: Post | PostWithRelations;
@@ -21,7 +77,7 @@ interface PostCardProps {
 
 export function PostCard({ post, onClick, compact = false, wideMedia = false, flushBottom = false, onTagClick, detail = false, canManage = false, onRefresh, onEdit, carousel = false }: PostCardProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [lightboxScale, setLightboxScale] = useState(1);
+  const [lightboxScale, setLightboxScale] = useState(1.25);
   const [mounted, setMounted] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [showAppends, setShowAppends] = useState(false);
@@ -245,47 +301,26 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
     onRefresh?.();
   };
 
-  // Extract hashtags from content
-  const renderContent = (content: string) => {
-    const parts = content.split(/(#[\w\u4e00-\u9fa5]+)/g);
-    return parts.map((part, i) => {
-      if (part.startsWith('#')) {
-        const tagName = part.slice(1); // Remove #
-        return (
-          <span
-            key={i}
-            className="cursor-pointer text-[#5d8fd6] hover:underline"
-            onClick={(e) => {
-              e.stopPropagation();
-              onTagClick?.(tagName);
-            }}
-          >
-            {part}
-          </span>
-        );
-      }
-      return <span key={i}>{part}</span>;
-    });
-  };
-
   return (
     <article
       onClick={onClick}
       className={`
         ${detail ? "bg-transparent" : "surface-card border-white/90"}
         ${onClick ? 'cursor-pointer transition-shadow duration-200 hover:shadow-[0_24px_42px_rgba(83,84,92,0.16)]' : ''}
-        ${compact
-          ? flushBottom
-            ? 'px-5 pt-5 pb-2 sm:px-6 sm:pt-6 sm:pb-2'
-            : 'px-5 py-5 sm:px-6 sm:py-6'
-          : 'p-6 sm:p-7'}
+        ${detail
+          ? ''
+          : compact
+            ? flushBottom
+              ? 'px-5 pt-5 pb-4 sm:px-6 sm:pt-6 sm:pb-4'
+              : 'px-5 py-5 sm:px-6 sm:py-6'
+            : 'p-6 sm:p-7'}
       `}
     >
       <div className={`
-        whitespace-pre-wrap text-[1.03rem] leading-8 text-[#1f2430]
+        text-[1.03rem] leading-8 text-[#1f2430]
         ${contentShouldClamp ? 'line-clamp-4' : ''}
       `}>
-        {renderContent(currentPost.content)}
+        <MarkdownContent content={currentPost.content} onTagClick={onTagClick} />
       </div>
 
       {compact && currentPost.content.length > 110 && (
@@ -588,6 +623,7 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
           >
             删除
           </button>
+          <span className="ml-auto text-soft">第 {currentPost.id} 条</span>
         </div>
       )}
 

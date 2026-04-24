@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  --background: #f6f6f6;
+  --background: #f7f3ea;
   --foreground: #1f2430;
   --surface: rgba(255, 255, 255, 0.88);
   --surface-strong: rgba(255, 255, 255, 0.96);
@@ -34,12 +34,12 @@
 
 html {
   scroll-behavior: smooth;
-  background: #ffffff;
+  background: #f7f3ea;
 }
 
 body {
   color: var(--foreground);
-  background: #ffffff;
+  background: #f7f3ea;
   font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
   background-image: none;
   min-height: 100vh;

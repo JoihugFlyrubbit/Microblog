@@ -116,7 +116,7 @@ export function PublicHome() {
         </div>
       </header>
 
-      <main className="safe-bottom-pad pb-24 bg-[#f6f6f6]">
+      <main className="safe-bottom-pad pb-24 bg-[#f7f3ea]">
         <section className="sticky z-0 flex min-h-[42vh] items-center bg-white sm:min-h-[62vh]" style={{ top: "calc(65px + env(safe-area-inset-top, 0px))" }}>
           <div className="shell flex flex-col items-center justify-center gap-6 py-8 text-center sm:gap-8 sm:py-10">
             <div className="animate-rise-in animate-soft-float">
@@ -127,8 +127,8 @@ export function PublicHome() {
           </div>
         </section>
 
-        <section ref={contentRef} className="relative z-20 bg-[#f6f6f6] pt-10 sm:pt-20">
-          <div aria-hidden="true" className="-mb-8 sticky z-10 h-8 -translate-y-full bg-[#f6f6f6]" style={{ top: "calc(65px + env(safe-area-inset-top, 0px))" }} />
+        <section ref={contentRef} className="relative z-20 bg-[#f7f3ea] pt-10 sm:pt-20">
+          <div aria-hidden="true" className="-mb-8 sticky z-10 h-8 -translate-y-full bg-[#f7f3ea]" style={{ top: "calc(65px + env(safe-area-inset-top, 0px))" }} />
           <div className="shell grid grid-cols-1 gap-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
           <div className="hidden lg:col-span-1 lg:self-start lg:block">
             <div className="space-y-5 lg:sticky lg:top-[4.8rem] lg:h-fit">

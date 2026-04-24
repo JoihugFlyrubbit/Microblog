@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// obsidian-sync Phase 1 MVP
-// 拉取 Microblog Markdown 导出，原子写入 Obsidian vault 汇总文件。
+// obsidian-sync v2
+// 每篇动态独立 .md，图片本地化到 attachments/，按内容指纹增量同步。
 
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 function parseArgs(argv) {
   const out = { configPath: null, watch: false };
@@ -26,18 +27,13 @@ function printHelp() {
   console.log(`用法：
   node sync.js [--config <path>] [--watch]
 
-示例：
-  node sync.js                           # 按默认 ./sync.config.json 同步一次
-  node sync.js --config ./my.json        # 指定配置文件
-  node sync.js --watch                   # 按 intervalSeconds 循环同步
-
 配置字段（sync.config.json）：
-  apiBase         string   必填  API 根地址，如 http://localhost:8787
+  apiBase         string   必填  API 根地址
   vaultPath       string   必填  Obsidian vault 目录绝对路径
-  outputPath      string   必填  写入文件相对 vault 的路径，如 Microblog/microblog-export.md
-  password        string   必填  管理员登录密码（Phase 2 会换成只读 token）
+  outputDir       string   必填  vault 内的输出目录（如 "Microblog"），脚本会建 posts/ 与 attachments/ 子目录
+  password        string   必填  管理员登录密码
   includePrivate  boolean  可选  默认 true
-  intervalSeconds number   可选  --watch 模式下的轮询周期，默认 60
+  intervalSeconds number   可选  --watch 周期，默认 60
 `);
 }
 
@@ -47,7 +43,11 @@ function loadConfig(configPath) {
     throw new Error(`配置文件不存在：${resolved}（可复制 sync.config.example.json 并填写）`);
   }
   const config = JSON.parse(fs.readFileSync(resolved, 'utf8'));
-  for (const key of ['apiBase', 'vaultPath', 'outputPath', 'password']) {
+  // outputPath 是 v1 字段，兼容性提示
+  if (config.outputPath && !config.outputDir) {
+    throw new Error('配置已升级：请把 outputPath（单文件路径）改为 outputDir（目录名，如 "Microblog"）');
+  }
+  for (const key of ['apiBase', 'vaultPath', 'outputDir', 'password']) {
     if (!config[key] || typeof config[key] !== 'string') {
       throw new Error(`配置缺少必填字段：${key}`);
     }
@@ -55,8 +55,8 @@ function loadConfig(configPath) {
   if (!path.isAbsolute(config.vaultPath)) {
     throw new Error(`vaultPath 必须是绝对路径，当前：${config.vaultPath}`);
   }
-  if (path.isAbsolute(config.outputPath)) {
-    throw new Error(`outputPath 必须是相对 vault 的相对路径，当前：${config.outputPath}`);
+  if (path.isAbsolute(config.outputDir)) {
+    throw new Error(`outputDir 必须是相对 vault 的相对路径，当前：${config.outputDir}`);
   }
   config.includePrivate = config.includePrivate !== false;
   config.intervalSeconds = Number(config.intervalSeconds) > 0 ? Number(config.intervalSeconds) : 60;
@@ -77,7 +77,6 @@ async function login(apiBase, password) {
     const body = await res.text().catch(() => '');
     throw new Error(`登录失败：HTTP ${res.status} ${body.slice(0, 200)}`);
   }
-  // iron-session 返回 Set-Cookie；Node fetch 保留原始头
   const setCookie = res.headers.get('set-cookie');
   if (!setCookie) {
     throw new Error('登录响应未包含 set-cookie，无法继续');
@@ -85,38 +84,312 @@ async function login(apiBase, password) {
   return setCookie.split(';')[0];
 }
 
-async function fetchMarkdown(apiBase, cookie, includePrivate) {
+async function fetchExport(apiBase, cookie, includePrivate) {
   const res = await fetch(`${apiBase}/export`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Cookie: cookie,
     },
-    body: JSON.stringify({ format: 'markdown', includePrivate }),
+    body: JSON.stringify({ format: 'json', includePrivate }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`/export 失败：HTTP ${res.status} ${body.slice(0, 200)}`);
   }
-  return await res.text();
+  const json = await res.json();
+  if (!json.success || !json.data) {
+    throw new Error(`/export 返回无效：${JSON.stringify(json).slice(0, 200)}`);
+  }
+  return json.data;
 }
 
+// 工具：原子写入
 function atomicWrite(targetFile, contents) {
   const dir = path.dirname(targetFile);
   fs.mkdirSync(dir, { recursive: true });
   const tmp = `${targetFile}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(tmp, contents, 'utf8');
+  fs.writeFileSync(tmp, contents);
   fs.renameSync(tmp, targetFile);
 }
 
+// 工具：原子写入二进制（图片）
+function atomicWriteBuffer(targetFile, buffer) {
+  const dir = path.dirname(targetFile);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = `${targetFile}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, buffer);
+  fs.renameSync(tmp, targetFile);
+}
+
+// 文件名安全化（保留中英文数字、空格、连字符、点）
+function sanitizeFilename(name) {
+  return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 200);
+}
+
+// post 文件名：YYYY-MM-DD HH-mm post-NN.md
+function postFilename(post) {
+  const d = new Date(post.created_at.replace(' ', 'T') + 'Z');
+  const valid = !Number.isNaN(d.getTime());
+  const dt = valid
+    ? `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')} ${String(d.getUTCHours()).padStart(2, '0')}-${String(d.getUTCMinutes()).padStart(2, '0')}`
+    : 'unknown';
+  return sanitizeFilename(`${dt} post-${post.id}.md`);
+}
+
+// mime → 扩展名
+function mimeToExt(mime) {
+  const map = {
+    'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/png': '.png',
+    'image/gif': '.gif', 'image/webp': '.webp', 'image/heic': '.heic',
+    'image/svg+xml': '.svg',
+    'video/mp4': '.mp4', 'video/quicktime': '.mov', 'video/webm': '.webm',
+  };
+  return map[mime?.toLowerCase()] || '';
+}
+
+// 从 url 提取 attachment 本地文件名
+function attachmentFilename(url) {
+  const hash = crypto.createHash('sha1').update(url).digest('hex').slice(0, 12);
+  // data URL: data:image/jpeg;base64,xxxxx
+  if (url.startsWith('data:')) {
+    const m = url.match(/^data:([^;,]+)/);
+    const ext = m ? mimeToExt(m[1]) : '';
+    return sanitizeFilename(`${hash}${ext}`);
+  }
+  // http(s) URL
+  let last;
+  try {
+    const u = new URL(url);
+    last = decodeURIComponent(u.pathname.split('/').filter(Boolean).pop() || 'file');
+  } catch {
+    last = url.split('/').pop() || 'file';
+  }
+  last = last.split('?')[0];
+  const ext = path.extname(last) || '';
+  const base = path.basename(last, ext);
+  return sanitizeFilename(`${hash}-${base}${ext}`);
+}
+
+// 落盘 attachment（base64 直接 decode；http 走 fetch），返回相对文件名
+async function ensureAttachment(url, attachmentsDir) {
+  const fname = attachmentFilename(url);
+  const target = path.join(attachmentsDir, fname);
+  if (fs.existsSync(target)) {
+    return fname;
+  }
+  let buf;
+  if (url.startsWith('data:')) {
+    const idx = url.indexOf(',');
+    if (idx < 0) throw new Error(`无效的 data URL`);
+    const meta = url.slice(5, idx); // image/jpeg;base64
+    const payload = url.slice(idx + 1);
+    if (!/;base64$/i.test(meta)) {
+      throw new Error(`仅支持 base64 编码的 data URL，当前 meta=${meta}`);
+    }
+    buf = Buffer.from(payload, 'base64');
+  } else {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`下载图片失败：HTTP ${res.status}`);
+    }
+    buf = Buffer.from(await res.arrayBuffer());
+  }
+  atomicWriteBuffer(target, buf);
+  return fname;
+}
+
+// 读取 .md 的 front-matter，返回 { fingerprint, postId } 或 null
+function readExistingMeta(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  const content = fs.readFileSync(filePath, 'utf8');
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  const lines = match[1].split('\n');
+  const get = (key) => {
+    const line = lines.find((l) => l.startsWith(`${key}:`));
+    return line ? line.replace(`${key}:`, '').trim() : null;
+  };
+  const idStr = get('post_id');
+  return {
+    fingerprint: get('fingerprint'),
+    postId: idStr ? Number(idStr) : null,
+  };
+}
+
+// 渲染格式版本号。改动 renderPostMarkdown 的输出格式时 +1，触发全量重写。
+const RENDER_FORMAT_VERSION = 3;
+
+// 算指纹：覆盖正文、updated_at、tags、media URLs、appends（id+content+created_at）
+function postFingerprint(post, postAppends, postMedia, postTagNames) {
+  const payload = JSON.stringify({
+    _v: RENDER_FORMAT_VERSION,
+    c: post.content,
+    u: post.updated_at,
+    v: post.visibility,
+    p: post.pinned,
+    t: postTagNames.slice().sort(),
+    m: postMedia.map((m) => `${m.type}:${m.url}`).sort(),
+    a: postAppends
+      .slice()
+      .sort((x, y) => x.id - y.id)
+      .map((a) => `${a.id}|${a.created_at}|${a.content}`),
+  });
+  return crypto.createHash('sha1').update(payload).digest('hex');
+}
+
+function escapeYaml(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function renderPostMarkdown({ post, postAppends, postMedia, postTagNames, attachmentMap, fingerprint }) {
+  const fmTags = postTagNames.length > 0
+    ? postTagNames.map((t) => `  - "${escapeYaml(t)}"`).join('\n')
+    : '  - "microblog"';
+
+  const frontmatter = [
+    '---',
+    `post_id: ${post.id}`,
+    `created_at: "${post.created_at}"`,
+    `updated_at: "${post.updated_at}"`,
+    `visibility: "${post.visibility}"`,
+    `pinned: ${post.pinned === 1 ? 'true' : 'false'}`,
+    `media_count: ${postMedia.length}`,
+    `append_count: ${postAppends.length}`,
+    `fingerprint: ${fingerprint}`,
+    'tags:',
+    fmTags,
+    '---',
+  ].join('\n');
+
+  // 逐行去末尾空白：避免 CommonMark 硬换行（行末 ≥2 空格）在 Obsidian 渲染成竖线。
+  // 不改后端 content，仅清洗导出表示。
+  const body = (post.content || '')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+$/, ''))
+    .join('\n')
+    .trim() || '_这条动态没有正文内容_';
+
+  const mediaBlock = postMedia.length > 0
+    ? '\n\n' + postMedia.map((m) => {
+        const local = attachmentMap.get(m.url);
+        if (!local) return '';
+        return m.type === 'image'
+          ? `![](attachments/${local})`
+          : `![[attachments/${local}]]`;
+      }).filter(Boolean).join('\n\n')
+    : '';
+
+  // front-matter 的 tags 字段 Obsidian 原生识别，正文里不再重复一行 #xxx。
+
+  const appendsBlock = postAppends.length > 0
+    ? '\n\n---\n\n#### 补充\n\n' + postAppends
+        .slice()
+        .sort((x, y) => new Date(x.created_at) - new Date(y.created_at))
+        .map((a) => `##### ${a.created_at}\n\n${a.content}`)
+        .join('\n\n')
+    : '';
+
+  return `${frontmatter}\n\n${body}${mediaBlock}${appendsBlock}\n`;
+}
+
+async function syncPosts(config, data) {
+  const baseDir = path.join(config.vaultPath, config.outputDir);
+  const postsDir = path.join(baseDir, 'posts');
+  const attachmentsDir = path.join(baseDir, 'attachments');
+  fs.mkdirSync(postsDir, { recursive: true });
+  fs.mkdirSync(attachmentsDir, { recursive: true });
+
+  // 索引：post_id → tags / appends / media
+  const tagsByPost = new Map();
+  for (const tag of data.tags || []) {
+    if (!tag.post_ids) continue;
+    for (const idStr of String(tag.post_ids).split(',')) {
+      const id = Number(idStr);
+      if (!id) continue;
+      const cur = tagsByPost.get(id) || [];
+      cur.push(tag.name);
+      tagsByPost.set(id, cur);
+    }
+  }
+  const appendsByPost = new Map();
+  for (const a of data.appends || []) {
+    const cur = appendsByPost.get(a.post_id) || [];
+    cur.push(a);
+    appendsByPost.set(a.post_id, cur);
+  }
+  const mediaByPost = new Map();
+  for (const m of data.media || []) {
+    if (!m.post_id) continue;
+    const cur = mediaByPost.get(m.post_id) || [];
+    cur.push(m);
+    mediaByPost.set(m.post_id, cur);
+  }
+
+  let written = 0;
+  let skipped = 0;
+  let imagesDownloaded = 0;
+  let markedDeleted = 0;
+
+  const livePostIds = new Set();
+
+  for (const post of data.posts || []) {
+    livePostIds.add(post.id);
+    const postAppends = appendsByPost.get(post.id) || [];
+    const postMedia = mediaByPost.get(post.id) || [];
+    const postTagNames = tagsByPost.get(post.id) || [];
+
+    const fingerprint = postFingerprint(post, postAppends, postMedia, postTagNames);
+    const filename = postFilename(post);
+    const target = path.join(postsDir, filename);
+
+    const existing = readExistingMeta(target);
+    if (existing && existing.fingerprint === fingerprint) {
+      skipped++;
+      continue;
+    }
+
+    // 下载图片
+    const attachmentMap = new Map();
+    for (const m of postMedia) {
+      try {
+        const before = fs.existsSync(path.join(attachmentsDir, attachmentFilename(m.url)));
+        const fname = await ensureAttachment(m.url, attachmentsDir);
+        attachmentMap.set(m.url, fname);
+        if (!before) imagesDownloaded++;
+      } catch (err) {
+        console.error(`[${timestamp()}] 警告：post ${post.id} 图片处理失败：${err.message}`);
+      }
+    }
+
+    const md = renderPostMarkdown({ post, postAppends, postMedia, postTagNames, attachmentMap, fingerprint });
+    atomicWrite(target, md);
+    written++;
+  }
+
+  // 检测被删除的 post：vault 里有但 export 没有的，文件名加 _deleted_ 前缀
+  for (const file of fs.readdirSync(postsDir)) {
+    if (!file.endsWith('.md')) continue;
+    if (file.startsWith('_deleted_')) continue; // 已经标记过
+    const fullPath = path.join(postsDir, file);
+    const meta = readExistingMeta(fullPath);
+    if (!meta || meta.postId == null) continue;
+    if (livePostIds.has(meta.postId)) continue;
+    const newPath = path.join(postsDir, `_deleted_${file}`);
+    fs.renameSync(fullPath, newPath);
+    markedDeleted++;
+  }
+
+  return { total: (data.posts || []).length, written, skipped, imagesDownloaded, markedDeleted };
+}
+
 async function runOnce(config) {
-  const outFile = path.join(config.vaultPath, config.outputPath);
   console.log(`[${timestamp()}] 登录 ${config.apiBase} ...`);
   const cookie = await login(config.apiBase, config.password);
-  console.log(`[${timestamp()}] 请求 /export（includePrivate=${config.includePrivate}）...`);
-  const markdown = await fetchMarkdown(config.apiBase, cookie, config.includePrivate);
-  atomicWrite(outFile, markdown);
-  console.log(`[${timestamp()}] 已写入 ${outFile}（${Buffer.byteLength(markdown, 'utf8')} 字节）`);
+  console.log(`[${timestamp()}] 拉取 export json（includePrivate=${config.includePrivate}）...`);
+  const data = await fetchExport(config.apiBase, cookie, config.includePrivate);
+  const stats = await syncPosts(config, data);
+  console.log(`[${timestamp()}] 同步完成：共 ${stats.total} 篇，写入 ${stats.written}，跳过 ${stats.skipped}，新下载图片 ${stats.imagesDownloaded}，标记删除 ${stats.markedDeleted}`);
 }
 
 async function runWatch(config) {

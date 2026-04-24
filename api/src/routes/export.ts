@@ -61,10 +61,13 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
     `).all();
 
     // Get media
+    const mediaWhere = includePrivate
+      ? ''
+      : "WHERE m.post_id IS NULL OR p.visibility = 'public'";
     const media = await db.prepare(`
       SELECT m.* FROM media m
       LEFT JOIN posts p ON m.post_id = p.id
-      WHERE m.post_id IS NULL ${includePrivate ? '' : "OR p.visibility = 'public'"}
+      ${mediaWhere}
       ORDER BY m.created_at DESC
     `).all();
 
