@@ -2,7 +2,6 @@
 
 import { useState, useRef } from "react";
 import { uploadApi, Media } from "@/lib/api";
-import { ImageCropper } from "./ImageCropper";
 
 interface MediaUploaderProps {
   onUploadComplete?: (media: Media) => void;
@@ -19,9 +18,6 @@ export function MediaUploader({
 }: MediaUploaderProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
-  const [cropQueue, setCropQueue] = useState<File[]>([]);
-  const [cropIndex, setCropIndex] = useState(0);
-  const [processedFiles, setProcessedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const getFileType = (file: File): "image" | "video" => {
@@ -276,52 +272,7 @@ export function MediaUploader({
       return;
     }
 
-    const fileArr = Array.from(files);
-    const images = fileArr.filter((f) => f.type.startsWith("image/"));
-    const nonImages = fileArr.filter((f) => !f.type.startsWith("image/"));
-
-    if (images.length === 0) {
-      // 没有图片，直接上传视频
-      await uploadAll(nonImages);
-      return;
-    }
-
-    // 进入裁剪队列：先裁剪所有图片，非图片直接放入待上传
-    setProcessedFiles(nonImages);
-    setCropIndex(0);
-    setCropQueue(images);
-  };
-
-  const handleCropApply = async (cropped: File) => {
-    const next = [...processedFiles, cropped];
-    if (cropIndex + 1 < cropQueue.length) {
-      setProcessedFiles(next);
-      setCropIndex(cropIndex + 1);
-    } else {
-      // 全部裁剪完，开始上传
-      setCropQueue([]);
-      setProcessedFiles([]);
-      await uploadAll(next);
-    }
-  };
-
-  const handleCropSkip = async () => {
-    const next = [...processedFiles, cropQueue[cropIndex]];
-    if (cropIndex + 1 < cropQueue.length) {
-      setProcessedFiles(next);
-      setCropIndex(cropIndex + 1);
-    } else {
-      setCropQueue([]);
-      setProcessedFiles([]);
-      await uploadAll(next);
-    }
-  };
-
-  const handleCropCancelAll = () => {
-    setCropQueue([]);
-    setProcessedFiles([]);
-    setCropIndex(0);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    await uploadAll(Array.from(files));
   };
 
   return (
@@ -367,17 +318,6 @@ export function MediaUploader({
         </div>
       ))}
 
-      {cropQueue.length > 0 && cropQueue[cropIndex] && (
-        <ImageCropper
-          key={`${cropIndex}-${cropQueue[cropIndex].name}`}
-          file={cropQueue[cropIndex]}
-          index={cropIndex}
-          total={cropQueue.length}
-          onApply={handleCropApply}
-          onSkip={handleCropSkip}
-          onCancelAll={handleCropCancelAll}
-        />
-      )}
     </div>
   );
 }

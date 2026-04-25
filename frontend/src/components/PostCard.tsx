@@ -39,7 +39,7 @@ function processChildren(children: React.ReactNode, onTagClick?: (tag: string) =
   });
 }
 
-function MarkdownContent({ content, onTagClick }: { content: string; onTagClick?: (tag: string) => void }) {
+export function MarkdownContent({ content, onTagClick }: { content: string; onTagClick?: (tag: string) => void }) {
   const wrap = (children: React.ReactNode) => processChildren(children, onTagClick);
   const components: Components = {
     p: ({ children }) => <p className="my-3 first:mt-0 last:mb-0">{wrap(children)}</p>,
@@ -77,7 +77,7 @@ interface PostCardProps {
 
 export function PostCard({ post, onClick, compact = false, wideMedia = false, flushBottom = false, onTagClick, detail = false, canManage = false, onRefresh, onEdit, carousel = false }: PostCardProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [lightboxScale, setLightboxScale] = useState(1.25);
+  const [lightboxScale, setLightboxScale] = useState(1.5);
   const [mounted, setMounted] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [showAppends, setShowAppends] = useState(false);
@@ -91,6 +91,8 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
   const [submittingAppend, setSubmittingAppend] = useState(false);
   const [scrollToLastAppend, setScrollToLastAppend] = useState(false);
   const lastAppendRef = useRef<HTMLDivElement | null>(null);
+  const appendFormRef = useRef<HTMLDivElement | null>(null);
+  const swipeStartX = useRef<number | null>(null);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const hasPostRelations = 'appends' in post;
   const compactPreview = !hasPostRelations && post.preview_media_url
@@ -137,7 +139,7 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setLightboxIndex(null);
-        setLightboxScale(1);
+        setLightboxScale(1.5);
         return;
       }
 
@@ -165,7 +167,7 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
 
   useEffect(() => {
     if (lightboxIndex !== null) {
-      setLightboxScale(1);
+      setLightboxScale(1.5);
     }
   }, [lightboxIndex]);
 
@@ -175,6 +177,13 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
     lastAppendRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     setScrollToLastAppend(false);
   }, [scrollToLastAppend, showAppends, loadedPost]);
+
+  useEffect(() => {
+    if (!showAppendForm) return;
+    requestAnimationFrame(() => {
+      appendFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [showAppendForm]);
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -496,7 +505,7 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
                   <div className="mb-1 text-xs text-soft">
                     {formatDate(append.created_at)}
                   </div>
-                  <div className="text-[#1f2430]">{append.content}</div>
+                  <div className="text-[#1f2430]"><MarkdownContent content={append.content} onTagClick={onTagClick} /></div>
                 </div>
               ))}
             </div>
@@ -554,7 +563,7 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
                       </button>
                     )}
                   </div>
-                  <div className="overflow-hidden whitespace-pre-wrap break-words text-[#1f2430]">{append.content}</div>
+                  <div className="overflow-hidden break-words text-[#1f2430]"><MarkdownContent content={append.content} onTagClick={onTagClick} /></div>
                 </div>
               ))}
             </div>
@@ -570,14 +579,14 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
             type="button"
             onClick={handleToggleVisibility}
             disabled={togglingVisibility}
-            className="inline-flex h-7 w-7 items-center justify-center text-[#6f7684] disabled:opacity-50"
+            className="inline-flex items-center justify-center text-[#6f7684] disabled:opacity-50"
             aria-label={currentPost.visibility === 'public' ? '当前公开，点击改为私密' : '当前私密，点击改为公开'}
             title={currentPost.visibility === 'public' ? '当前公开，点击改为私密' : '当前私密，点击改为公开'}
           >
             {currentPost.visibility === 'public' ? (
-              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden="true">
-                <path d="M8 10V7.5a4 4 0 1 1 8 0V10h-2V7.5a2 2 0 1 0-4 0V10h4.5A1.5 1.5 0 0 1 16 11.5V18a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 6 18v-6.5A1.5 1.5 0 0 1 7.5 10H8Zm0 1.8v5.9h6v-5.9H8Z" />
-                <path d="M16 6.7c2.2 0 4 1.8 4 4v2.6h-1.8v-2.6c0-1.2-1-2.2-2.2-2.2V6.7Z" />
+              <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+                <rect x="7" y="9" width="11" height="11" rx="2" fill="currentColor" />
+                <path d="M5 9 V 6 a 3.2 3.2 0 0 1 6.4 0 V 9" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
               </svg>
             ) : (
               <svg viewBox="0 0 20 20" className="h-4 w-4 fill-current" aria-hidden="true">
@@ -623,15 +632,36 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
           >
             删除
           </button>
-          <span className="ml-auto text-soft">第 {currentPost.id} 条</span>
+          {(() => {
+            const palette = [
+              { fg: '#ef8f72', bg: '#fff3ef' },
+              { fg: '#64b7ea', bg: '#eef7ff' },
+              { fg: '#68c7b8', bg: '#eefaf7' },
+              { fg: '#f1b94e', bg: '#fff9ea' },
+            ];
+            const p = palette[((currentPost.id - 1) % palette.length + palette.length) % palette.length];
+            return (
+              <span
+                className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded-full text-[0.7rem] font-medium"
+                style={{ color: p.fg, background: p.bg }}
+              >
+                {currentPost.id}
+              </span>
+            );
+          })()}
         </div>
       )}
 
       {canManage && compact && showAppendForm && (
-        <div className="mt-4 rounded-[5px] bg-white/82 p-4" onClick={(event) => event.stopPropagation()}>
+        <div ref={appendFormRef} className="mt-4 rounded-[5px] bg-white/82 p-4" onClick={(event) => event.stopPropagation()}>
           <textarea
+            autoFocus
             value={appendContent}
             onChange={(event) => setAppendContent(event.target.value)}
+            onFocus={(event) => {
+              const el = event.currentTarget;
+              setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+            }}
             placeholder="补充内容..."
             rows={3}
             className="field-input w-full resize-none px-3 py-2"
@@ -665,21 +695,37 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
           style={{
             top: "calc(-1 * var(--safe-top))",
             bottom: "calc(-1 * var(--safe-bottom))",
+            touchAction: 'none',
           }}
           onClick={(e) => {
             e.stopPropagation();
             if (e.target === e.currentTarget) {
               setLightboxIndex(null);
-              setLightboxScale(1);
+              setLightboxScale(1.5);
             }
           }}
         >
-          <div className="relative flex h-[min(84vh,calc(100dvh-2rem))] w-full max-w-5xl items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="relative flex h-[min(84vh,calc(100dvh-2rem))] w-full max-w-5xl items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={(e) => { swipeStartX.current = e.touches[0].clientX; }}
+            onTouchEnd={(e) => {
+              if (swipeStartX.current === null || currentMediaItems.length <= 1) return;
+              const dx = e.changedTouches[0].clientX - swipeStartX.current;
+              swipeStartX.current = null;
+              if (Math.abs(dx) < 50) return;
+              setLightboxIndex((value) => {
+                if (value === null) return 0;
+                if (dx > 0) return value === 0 ? currentMediaItems.length - 1 : value - 1;
+                return value === currentMediaItems.length - 1 ? 0 : value + 1;
+              });
+            }}
+          >
             <button
               type="button"
               onClick={() => {
                 setLightboxIndex(null);
-                setLightboxScale(1);
+                setLightboxScale(1.5);
               }}
               className="absolute right-3 top-3 z-[91] flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-3xl leading-none text-white"
               aria-label="关闭预览"
@@ -687,27 +733,9 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
               ×
             </button>
             {currentMediaItems.length > 1 && (
-              <>
-                <div className="absolute left-3 top-3 z-[91] rounded-full bg-black/55 px-3 py-1 text-sm text-white">
-                  {lightboxIndex! + 1} / {currentMediaItems.length}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setLightboxIndex((value) => (value === null ? 0 : value === 0 ? currentMediaItems.length - 1 : value - 1))}
-                  className="absolute left-3 top-1/2 z-[91] flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-2xl text-white"
-                  aria-label="上一张"
-                >
-                  ‹
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLightboxIndex((value) => (value === null ? 0 : value === currentMediaItems.length - 1 ? 0 : value + 1))}
-                  className="absolute right-3 top-1/2 z-[91] flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-2xl text-white"
-                  aria-label="下一张"
-                >
-                  ›
-                </button>
-              </>
+              <div className="absolute left-3 top-3 z-[91] rounded-full bg-black/55 px-3 py-1 text-sm text-white">
+                {lightboxIndex! + 1} / {currentMediaItems.length}
+              </div>
             )}
             {activeLightboxItem.type === "image" ? (
               <>

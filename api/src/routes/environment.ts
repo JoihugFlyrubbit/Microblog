@@ -78,7 +78,7 @@ async function fetchQWeatherAqi(env: Env) {
   const token = await createQWeatherToken(env);
   const host = env.QWEATHER_API_HOST || 'your-qweather-api-host';
   const response = await fetch(
-    `https://${host}/airquality/v1/current/${LON.toFixed(2)}/${LAT.toFixed(2)}`,
+    `https://${host}/airquality/v1/current/${LAT.toFixed(2)}/${LON.toFixed(2)}`,
     {
       headers: { Authorization: `Bearer ${token}` },
     }

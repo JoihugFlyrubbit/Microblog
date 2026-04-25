@@ -9,6 +9,7 @@ interface PostDetailModalProps {
   onClose: () => void;
   onDelete?: () => void;
   onPinChange?: () => void;
+  onUpdate?: () => void;
   onTagClick?: (tag: string) => void;
   canManage?: boolean;
   initialEditing?: boolean;
@@ -19,6 +20,7 @@ export function PostDetailModal({
   onClose,
   onDelete,
   onPinChange,
+  onUpdate,
   onTagClick,
   canManage = false,
   initialEditing = false,
@@ -45,6 +47,7 @@ export function PostDetailModal({
           onClose={onClose}
           onDelete={onDelete}
           onPinChange={onPinChange}
+          onUpdate={onUpdate}
           onTagClick={onTagClick}
           canManage={canManage}
           initialEditing={initialEditing}

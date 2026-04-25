@@ -71,7 +71,7 @@ export function EnvironmentHeaderBadge() {
         <span className="absolute right-[3.65rem] top-[0.35rem] h-7 w-7 rounded-full bg-[#49aff3]" />
         <span className="absolute right-6 top-[0.9rem] h-5 w-5 rounded-full bg-[#49aff3]" />
         <span className="absolute right-2 top-[1.15rem] h-4 w-4 rounded-full bg-[#49aff3]" />
-        <span className="relative z-10 text-[11px] font-semibold tracking-[0.02em] text-white">
+        <span className="relative z-10 mt-2 text-[11px] font-semibold tracking-[0.02em] text-white">
           AQI {aqi ?? "--"} / UV {uv ?? "--"}
         </span>
       </div>

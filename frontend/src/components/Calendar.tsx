@@ -134,7 +134,7 @@ export function Calendar({ onDateSelect, selectedDate, includePrivate = false, r
               key={day}
               onClick={() => onDateSelect?.(isSelected ? undefined : dateStr)}
               className={`
-                relative aspect-square rounded-2xl text-sm transition-colors
+                relative aspect-square rounded-full text-sm transition-colors
                 ${isSelected ? `${palette.active} shadow-[0_14px_28px_rgba(93,101,118,0.18)]` : hasPosts ? palette.idle : "bg-white/75 text-[#1f2430] hover:bg-white"}
                 ${today && !isSelected ? "font-medium ring-1 ring-[#1f2430]/10" : ""}
               `}

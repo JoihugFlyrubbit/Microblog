@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { postsApi, PostWithRelations } from "@/lib/api";
-import { PostCard } from "./PostCard";
+import { PostCard, MarkdownContent } from "./PostCard";
 import { PostForm } from "./PostForm";
 
 interface PostDetailProps {
@@ -26,6 +26,22 @@ export function PostDetail({ postId, onClose, onDelete, onPinChange, onTagClick,
   const [togglingPin, setTogglingPin] = useState(false);
   const [deletingAppendId, setDeletingAppendId] = useState<number | null>(null);
   const [editing, setEditing] = useState(initialEditing);
+  const appendFormRef = useRef<HTMLDivElement | null>(null);
+  const editFormRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!showAppendForm) return;
+    requestAnimationFrame(() => {
+      appendFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [showAppendForm]);
+
+  useEffect(() => {
+    if (!editing) return;
+    requestAnimationFrame(() => {
+      editFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [editing]);
 
   const loadPost = useCallback(async () => {
     setLoading(true);
@@ -167,21 +183,23 @@ export function PostDetail({ postId, onClose, onDelete, onPinChange, onTagClick,
         style={{ paddingBottom: "calc(1.5rem + var(--safe-bottom))" }}
       >
         {editing ? (
-          <PostForm
-            editPost={post}
-            onCancel={() => setEditing(false)}
-            onSuccess={() => {
-              setEditing(false);
-              loadPost();
-              onUpdate?.();
-            }}
-          />
+          <div ref={editFormRef}>
+            <PostForm
+              editPost={post}
+              onCancel={() => setEditing(false)}
+              onSuccess={() => {
+                setEditing(false);
+                loadPost();
+                onUpdate?.();
+              }}
+            />
+          </div>
         ) : (
           <PostCard post={post} onTagClick={onTagClick} detail />
         )}
 
-        {!editing && canManage && post.appends.length > 0 && (
-          <div className="mt-4 space-y-2">
+        {!editing && post.appends.length > 0 && (
+          <div className="mt-6 space-y-2">
             {post.appends.map((append) => (
               <div key={append.id} className="rounded-[5px] bg-gray-50 p-4 text-sm">
                 <div className="mb-1 flex items-center justify-between gap-3 text-xs text-soft">
@@ -191,15 +209,17 @@ export function PostDetail({ postId, onClose, onDelete, onPinChange, onTagClick,
                     hour: '2-digit',
                     minute: '2-digit',
                   })}</span>
-                  <button
-                    onClick={() => handleDeleteAppend(append.id)}
-                    disabled={deletingAppendId === append.id}
-                    className="text-[#ef8f72] hover:underline disabled:opacity-50"
-                  >
-                    删除补充
-                  </button>
+                  {canManage && (
+                    <button
+                      onClick={() => handleDeleteAppend(append.id)}
+                      disabled={deletingAppendId === append.id}
+                      className="text-[#ef8f72] hover:underline disabled:opacity-50"
+                    >
+                      删除补充
+                    </button>
+                  )}
                 </div>
-                <div className="text-[#1f2430]">{append.content}</div>
+                <div className="text-[#1f2430]"><MarkdownContent content={append.content} onTagClick={onTagClick} /></div>
               </div>
             ))}
           </div>
@@ -207,11 +227,16 @@ export function PostDetail({ postId, onClose, onDelete, onPinChange, onTagClick,
 
         {/* Append form */}
         {!editing && canManage && showAppendForm && (
-          <div className="mt-6 rounded-[5px] bg-gray-50 p-4">
+          <div ref={appendFormRef} className="mt-6 rounded-[5px] bg-gray-50 p-4">
             <h4 className="text-sm font-medium text-gray-700 mb-2">添加补充</h4>
             <textarea
+              autoFocus
               value={appendContent}
               onChange={(e) => setAppendContent(e.target.value)}
+              onFocus={(e) => {
+                const el = e.currentTarget;
+                setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+              }}
               placeholder="补充内容..."
               rows={3}
               className="field-input w-full resize-none px-3 py-2"
@@ -235,7 +260,7 @@ export function PostDetail({ postId, onClose, onDelete, onPinChange, onTagClick,
         )}
 
         {!editing && canManage && !showAppendForm && (
-          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+          <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
             <button
               onClick={() => setShowAppendForm(true)}
               className="font-medium text-[#5d8fd6] hover:underline"

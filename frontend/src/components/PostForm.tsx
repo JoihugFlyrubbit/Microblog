@@ -2,8 +2,67 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { postsApi, Media, PostWithRelations, TagWithCount, tagsApi } from "@/lib/api";
+import { postsApi, uploadApi, Media, PostWithRelations, TagWithCount, tagsApi } from "@/lib/api";
 import { MediaUploader } from "./MediaUploader";
+import { ImageCropper } from "./ImageCropper";
+
+async function urlToFile(url: string, filename: string): Promise<File> {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new File([blob], filename, { type: blob.type || "image/jpeg" });
+}
+
+async function uploadCroppedImage(file: File): Promise<Media> {
+  const presigned = await uploadApi.getPresignedUrl({
+    filename: file.name,
+    contentType: file.type,
+    size: file.size,
+  });
+  if (!presigned.success || !presigned.data) {
+    throw new Error(presigned.error?.message || "获取上传地址失败");
+  }
+  const { url, mode } = presigned.data;
+  if (mode !== "local") {
+    throw new Error("当前仅支持本地存储模式下重新上传裁剪");
+  }
+  const dataUrl: string = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+  const dimensions = await new Promise<{ width: number; height: number }>((resolve) => {
+    const img = new window.Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve({ width: 0, height: 0 });
+    img.src = URL.createObjectURL(file);
+  });
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      data: dataUrl,
+      type: "image",
+      size: file.size,
+      width: dimensions.width,
+      height: dimensions.height,
+    }),
+  });
+  if (!res.ok) throw new Error("本地上传失败");
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error?.message || "本地上传失败");
+  return {
+    id: data.data.mediaId,
+    post_id: 0,
+    type: "image",
+    url: data.data.url,
+    size: file.size,
+    width: undefined,
+    height: undefined,
+    created_at: new Date().toISOString(),
+  };
+}
 
 interface PostFormProps {
   onSuccess?: () => void;
@@ -21,6 +80,7 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
   const [existingTags, setExistingTags] = useState<TagWithCount[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cropping, setCropping] = useState<{ mediaId: number; file: File } | null>(null);
 
   const detectedTags = Array.from(
     new Set(
@@ -109,6 +169,28 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
     setMedia((prev) => prev.filter((m) => m.id !== mediaId));
   };
 
+  const handleStartCrop = async (m: Media) => {
+    if (m.type !== "image") return;
+    try {
+      const file = await urlToFile(m.url, `media-${m.id}.jpg`);
+      setCropping({ mediaId: m.id, file });
+    } catch {
+      setError("无法加载图片用于裁剪");
+    }
+  };
+
+  const handleCropApply = async (cropped: File) => {
+    if (!cropping) return;
+    const oldId = cropping.mediaId;
+    setCropping(null);
+    try {
+      const newMedia = await uploadCroppedImage(cropped);
+      setMedia((prev) => prev.map((m) => (m.id === oldId ? newMedia : m)));
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "上传失败");
+    }
+  };
+
   const charCount = content.length;
 
   return (
@@ -122,8 +204,13 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
       {/* Content textarea */}
       <div className="mb-4">
         <textarea
+          autoFocus
           value={content}
           onChange={(e) => setContent(e.target.value)}
+          onFocus={(e) => {
+            const el = e.currentTarget;
+            setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+          }}
           placeholder="分享你的想法..."
           rows={6}
           maxLength={10000}
@@ -207,6 +294,17 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
                 >
                   ×
                 </button>
+                {m.type === "image" && (
+                  <button
+                    type="button"
+                    onClick={() => handleStartCrop(m)}
+                    disabled={submitting}
+                    className="absolute bottom-1 left-1 px-2 h-6 bg-black/55 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs"
+                    title="裁剪"
+                  >
+                    裁剪
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -218,6 +316,17 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
           maxFiles={9 - media.length}
         />
       </div>
+
+      {cropping && (
+        <ImageCropper
+          file={cropping.file}
+          index={0}
+          total={1}
+          onApply={handleCropApply}
+          onSkip={() => setCropping(null)}
+          onCancelAll={() => setCropping(null)}
+        />
+      )}
 
       {/* Visibility toggle */}
       <div className="mb-6">

@@ -342,6 +342,7 @@ export function AdminHome() {
           onClose={() => { setSelectedPostId(null); setEditingOnOpen(false); }}
           onDelete={handlePostDelete}
           onPinChange={() => setRefreshKey((value) => value + 1)}
+          onUpdate={() => setRefreshKey((value) => value + 1)}
           onTagClick={handlePostTagClick}
           canManage
           initialEditing={editingOnOpen}

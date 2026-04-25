@@ -127,14 +127,19 @@ function sanitizeFilename(name) {
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 200);
 }
 
-// post 文件名：YYYY-MM-DD HH-mm post-NN.md
+// post 文件名：YYYY-MM-DD HH-mm post-NN.md（北京时间）
 function postFilename(post) {
   const d = new Date(post.created_at.replace(' ', 'T') + 'Z');
-  const valid = !Number.isNaN(d.getTime());
-  const dt = valid
-    ? `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')} ${String(d.getUTCHours()).padStart(2, '0')}-${String(d.getUTCMinutes()).padStart(2, '0')}`
-    : 'unknown';
-  return sanitizeFilename(`${dt} post-${post.id}.md`);
+  if (Number.isNaN(d.getTime())) {
+    return sanitizeFilename(`unknown post-${post.id}.md`);
+  }
+  const beijing = new Date(d.getTime() + 8 * 3600 * 1000);
+  const Y = beijing.getUTCFullYear();
+  const M = String(beijing.getUTCMonth() + 1).padStart(2, '0');
+  const D = String(beijing.getUTCDate()).padStart(2, '0');
+  const h = String(beijing.getUTCHours()).padStart(2, '0');
+  const m = String(beijing.getUTCMinutes()).padStart(2, '0');
+  return sanitizeFilename(`${Y}-${M}-${D} ${h}-${m} post-${post.id}.md`);
 }
 
 // mime → 扩展名
@@ -218,7 +223,23 @@ function readExistingMeta(filePath) {
 }
 
 // 渲染格式版本号。改动 renderPostMarkdown 的输出格式时 +1，触发全量重写。
-const RENDER_FORMAT_VERSION = 3;
+const RENDER_FORMAT_VERSION = 4;
+
+// D1 里 created_at/updated_at 是 UTC 字符串（"YYYY-MM-DD HH:mm:ss"）。
+// 输出到 obsidian 的时间统一转北京时间（+8h），文件名 / front-matter / appends 时间戳一致。
+function toBeijingTimeString(utcStr) {
+  if (!utcStr) return utcStr;
+  const d = new Date(utcStr.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(d.getTime())) return utcStr;
+  const beijing = new Date(d.getTime() + 8 * 3600 * 1000);
+  const Y = beijing.getUTCFullYear();
+  const M = String(beijing.getUTCMonth() + 1).padStart(2, '0');
+  const D = String(beijing.getUTCDate()).padStart(2, '0');
+  const h = String(beijing.getUTCHours()).padStart(2, '0');
+  const m = String(beijing.getUTCMinutes()).padStart(2, '0');
+  const s = String(beijing.getUTCSeconds()).padStart(2, '0');
+  return `${Y}-${M}-${D} ${h}:${m}:${s}`;
+}
 
 // 算指纹：覆盖正文、updated_at、tags、media URLs、appends（id+content+created_at）
 function postFingerprint(post, postAppends, postMedia, postTagNames) {
@@ -250,8 +271,8 @@ function renderPostMarkdown({ post, postAppends, postMedia, postTagNames, attach
   const frontmatter = [
     '---',
     `post_id: ${post.id}`,
-    `created_at: "${post.created_at}"`,
-    `updated_at: "${post.updated_at}"`,
+    `created_at: "${toBeijingTimeString(post.created_at)}"`,
+    `updated_at: "${toBeijingTimeString(post.updated_at)}"`,
     `visibility: "${post.visibility}"`,
     `pinned: ${post.pinned === 1 ? 'true' : 'false'}`,
     `media_count: ${postMedia.length}`,
@@ -286,7 +307,7 @@ function renderPostMarkdown({ post, postAppends, postMedia, postTagNames, attach
     ? '\n\n---\n\n#### 补充\n\n' + postAppends
         .slice()
         .sort((x, y) => new Date(x.created_at) - new Date(y.created_at))
-        .map((a) => `##### ${a.created_at}\n\n${a.content}`)
+        .map((a) => `##### ${toBeijingTimeString(a.created_at)}\n\n${a.content}`)
         .join('\n\n')
     : '';
 
@@ -342,6 +363,19 @@ async function syncPosts(config, data) {
     const fingerprint = postFingerprint(post, postAppends, postMedia, postTagNames);
     const filename = postFilename(post);
     const target = path.join(postsDir, filename);
+
+    // 时区切换或文件名规则变化时，同 post_id 的旧文件名可能不同。先把旧文件 rename 到新路径。
+    for (const file of fs.readdirSync(postsDir)) {
+      if (!file.endsWith('.md')) continue;
+      if (file.startsWith('_deleted_')) continue;
+      if (file === filename) continue;
+      const fullPath = path.join(postsDir, file);
+      const oldMeta = readExistingMeta(fullPath);
+      if (oldMeta && oldMeta.postId === post.id) {
+        fs.renameSync(fullPath, target);
+        break;
+      }
+    }
 
     const existing = readExistingMeta(target);
     if (existing && existing.fingerprint === fingerprint) {
