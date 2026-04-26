@@ -135,21 +135,35 @@ async function fetchUv() {
     throw new Error('Open-Meteo UV data missing');
   }
 
-  const uvMax = Math.round(Math.max(...values));
   const day = times
     .map((time, index) => ({ hour: Number(time.slice(11, 13)), value: values[index] }))
     .filter((item) => item.hour >= 6 && item.hour <= 20);
+  if (day.length === 0) {
+    throw new Error('Open-Meteo daytime UV data missing');
+  }
+  const nowHour = Number(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Shanghai',
+    hour: '2-digit',
+    hour12: false,
+  }).format(new Date()));
+  const current = day.find((item) => item.hour === nowHour)
+    || day.reduce((closest, item) =>
+      Math.abs(item.hour - nowHour) < Math.abs(closest.hour - nowHour) ? item : closest
+    );
+  const uvNow = Math.round(current.value);
+  const uvMax = Math.round(Math.max(...day.map((item) => item.value)));
   const unsafe = day.filter((item) => item.value > 1);
 
-  let summary = '全天 UV≤1，随时可出门';
+  let summary = `当前 UV ${uvNow}，今日峰值 ${uvMax}`;
   if (unsafe.length > 0) {
     const firstUnsafe = unsafe[0].hour;
     const recoverHour = unsafe[unsafe.length - 1].hour + 1;
-    summary = `${String(firstUnsafe).padStart(2, '0')}:00 前和 ${String(recoverHour).padStart(2, '0')}:00 后 UV≤2`;
+    summary = `${summary}；${String(firstUnsafe).padStart(2, '0')}:00 前和 ${String(recoverHour).padStart(2, '0')}:00 后 UV≤2`;
   }
 
   return {
-    value: uvMax,
+    value: uvNow,
+    max: uvMax,
     summary,
   };
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { getApiBase } from "@/lib/api";
+import { formatBeijingTime } from "@/lib/time";
 
 type EnvironmentResponse = {
   success: boolean;
@@ -56,7 +57,7 @@ export function EnvironmentCard() {
   }, []);
 
   const updatedAt = data?.updatedAt
-    ? new Date(data.updatedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+    ? formatBeijingTime(data.updatedAt)
     : "--:--";
 
   return (

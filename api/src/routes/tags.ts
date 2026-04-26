@@ -86,7 +86,7 @@ tagsRouter.get('/calendar/dates', optionalAuthMiddleware, async (c) => {
 
   let query = `
     SELECT DISTINCT
-      DATE(created_at) as date,
+      DATE(datetime(created_at, '+8 hours')) as date,
       COUNT(*) as count
     FROM posts
     WHERE 1 = 1
@@ -98,16 +98,16 @@ tagsRouter.get('/calendar/dates', optionalAuthMiddleware, async (c) => {
   }
 
   if (year) {
-    query += ' AND strftime("%Y", created_at) = ?';
+    query += ` AND strftime("%Y", datetime(created_at, '+8 hours')) = ?`;
     params.push(year);
   }
 
   if (month) {
-    query += ' AND strftime("%m", created_at) = ?';
+    query += ` AND strftime("%m", datetime(created_at, '+8 hours')) = ?`;
     params.push(month.padStart(2, '0'));
   }
 
-  query += ' GROUP BY DATE(created_at) ORDER BY date DESC';
+  query += ` GROUP BY DATE(datetime(created_at, '+8 hours')) ORDER BY date DESC`;
 
   try {
     const dates = await db.prepare(query).bind(...params).all();

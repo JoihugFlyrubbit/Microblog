@@ -26,7 +26,7 @@ export function BackToTopButton() {
         visible ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0",
       ].join(" ")}
       style={{
-        right: "max(1rem, calc((100vw - 72rem) / 2 + 1rem))",
+        right: "max(1rem, calc((100vw - 72rem) / 2 - 4rem))",
         bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))",
       }}
     >

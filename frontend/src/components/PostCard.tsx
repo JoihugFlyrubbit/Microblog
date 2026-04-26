@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import ReactMarkdown, { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
+import { formatBeijingDateTime } from "@/lib/time";
 
 function splitHashtags(text: string, onTagClick?: (tag: string) => void) {
   const parts = text.split(/(#[\w一-龥]+)/g);
@@ -188,13 +189,7 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
   }, [showAppendForm]);
 
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleString('zh-CN', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return formatBeijingDateTime(dateStr);
   };
 
   const activeLightboxItem = lightboxIndex !== null ? currentMediaItems[lightboxIndex] : null;
@@ -729,6 +724,36 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
               <div className="absolute left-3 top-3 z-[91] rounded-full bg-black/55 px-3 py-1 text-sm text-white">
                 {lightboxIndex! + 1} / {currentMediaItems.length}
               </div>
+            )}
+            {currentMediaItems.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLightboxIndex((value) => {
+                      if (value === null) return 0;
+                      return value === 0 ? currentMediaItems.length - 1 : value - 1;
+                    });
+                  }}
+                  className="absolute left-3 top-1/2 z-[91] flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-3xl leading-none text-white hover:bg-black/70"
+                  aria-label="上一张"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLightboxIndex((value) => {
+                      if (value === null) return 0;
+                      return value === currentMediaItems.length - 1 ? 0 : value + 1;
+                    });
+                  }}
+                  className="absolute right-3 top-1/2 z-[91] flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-3xl leading-none text-white hover:bg-black/70"
+                  aria-label="下一张"
+                >
+                  ›
+                </button>
+              </>
             )}
             {activeLightboxItem.type === "image" ? (
               <>

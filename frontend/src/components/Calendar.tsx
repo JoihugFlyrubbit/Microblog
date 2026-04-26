@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { tagsApi, CalendarDate } from "@/lib/api";
+import { getBeijingNowParts } from "@/lib/time";
 
 const datePalette = [
   { idle: "text-[#ef8f72] bg-[#fff3ef]", active: "bg-[#ef8f72] text-white" },
@@ -18,7 +19,10 @@ interface CalendarProps {
 }
 
 export function Calendar({ onDateSelect, selectedDate, includePrivate = false, refreshKey = 0 }: CalendarProps) {
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(() => {
+    const now = getBeijingNowParts();
+    return new Date(now.year, now.month, 1);
+  });
   const [datesWithPosts, setDatesWithPosts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
 
@@ -80,11 +84,11 @@ export function Calendar({ onDateSelect, selectedDate, includePrivate = false, r
   };
 
   const isToday = (day: number) => {
-    const today = new Date();
+    const today = getBeijingNowParts();
     return (
-      day === today.getDate() &&
-      month === today.getMonth() &&
-      year === today.getFullYear()
+      day === today.day &&
+      month === today.month &&
+      year === today.year
     );
   };
 

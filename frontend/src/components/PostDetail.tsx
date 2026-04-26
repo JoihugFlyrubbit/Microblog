@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { postsApi, PostWithRelations } from "@/lib/api";
 import { PostCard, MarkdownContent } from "./PostCard";
 import { PostForm } from "./PostForm";
+import { formatBeijingDateTime } from "@/lib/time";
 
 interface PostDetailProps {
   postId: number;
@@ -203,12 +204,7 @@ export function PostDetail({ postId, onClose, onDelete, onPinChange, onTagClick,
             {post.appends.map((append) => (
               <div key={append.id} className="rounded-[5px] bg-gray-50 p-4 text-sm">
                 <div className="mb-1 flex items-center justify-between gap-3 text-xs text-soft">
-                  <span>{new Date(append.created_at).toLocaleString('zh-CN', {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}</span>
+                  <span>{formatBeijingDateTime(append.created_at)}</span>
                   {canManage && (
                     <button
                       onClick={() => handleDeleteAppend(append.id)}

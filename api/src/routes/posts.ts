@@ -123,7 +123,7 @@ postsRouter.get('/', optionalAuthMiddleware, zValidator('query', listPostsSchema
 
   // Date filter
   if (date) {
-    conditions.push('DATE(p.created_at) = ?');
+    conditions.push("DATE(datetime(p.created_at, '+8 hours')) = ?");
     params.push(date);
   }
 

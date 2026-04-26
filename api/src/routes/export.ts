@@ -23,10 +23,14 @@ const escapeHtml = (value: string) =>
 const escapeMarkdown = (value: string) =>
   value.replace(/\\/g, '\\\\');
 
+const parseUtcDate = (value: string) =>
+  new Date(/[zZ]$|[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value.replace(' ', 'T')}Z`);
+
 const formatMarkdownDate = (value: string) => {
-  const date = new Date(value);
+  const date = parseUtcDate(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -34,6 +38,23 @@ const formatMarkdownDate = (value: string) => {
     minute: '2-digit',
     hour12: false,
   });
+};
+
+const formatBeijingTimestamp = (value: string) => {
+  const date = parseUtcDate(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value || '';
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
 };
 
 function base64UrlEncode(value: ArrayBuffer | string) {
@@ -182,7 +203,9 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
       const csvHeaders = ['id', 'content', 'visibility', 'created_at', 'updated_at'];
       const csvRows = (posts.results as any[]).map(post =>
         csvHeaders.map(h => {
-          const val = post[h];
+          const val = h === 'created_at' || h === 'updated_at'
+            ? formatBeijingTimestamp(String(post[h]))
+            : post[h];
           // Escape quotes and wrap in quotes if needed
           if (typeof val === 'string' && (val.includes(',') || val.includes('"') || val.includes('\n'))) {
             return `"${val.replace(/"/g, '""')}"`;
@@ -227,7 +250,7 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
       const dateOptions = Array.from(
         new Set(
           (posts.results as Array<{ created_at: string }>)
-            .map((post) => String(post.created_at).slice(0, 10))
+            .map((post) => formatBeijingTimestamp(String(post.created_at)).slice(0, 10))
         )
       );
       const tagOptions = Array.from(
@@ -243,7 +266,7 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
           const postMedia = mediaByPost.get(post.id) || [];
           const postAppends = appendsByPost.get(post.id) || [];
           const postTagNames = postTags.get(post.id) || [];
-          const postDate = String(post.created_at).slice(0, 10);
+          const postDate = formatBeijingTimestamp(String(post.created_at)).slice(0, 10);
 
           const mediaHtml = postMedia.map((item) => {
             if (item.type === 'image') {
@@ -258,7 +281,7 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
 
           const appendsHtml = postAppends.map((append) => `
             <div class="append">
-              <div class="append-time">${escapeHtml(String(append.created_at))}</div>
+              <div class="append-time">${escapeHtml(formatBeijingTimestamp(String(append.created_at)))}</div>
               <div>${escapeHtml(String(append.content || ''))}</div>
             </div>
           `).join('');
@@ -266,7 +289,7 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
           return `
             <article class="card" data-date="${escapeHtml(postDate)}" data-tags="${escapeHtml(postTagNames.join(','))}">
               <div class="meta">
-                <span>${escapeHtml(String(post.created_at))}</span>
+                <span>${escapeHtml(formatBeijingTimestamp(String(post.created_at)))}</span>
                 <span class="visibility">${post.visibility === 'private' ? '私密' : '公开'}</span>
               </div>
               ${post.content ? `<div class="content">${escapeHtml(post.content)}</div>` : ''}
@@ -328,7 +351,7 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
     <main class="page">
       <section class="hero">
         <h1>Microblog Export</h1>
-        <p>导出时间：${escapeHtml(exportData.exported_at)} · ${includePrivate ? '包含全部内容' : '仅公开内容'}</p>
+        <p>导出时间：${escapeHtml(formatBeijingTimestamp(exportData.exported_at))} · ${includePrivate ? '包含全部内容' : '仅公开内容'}</p>
       </section>
       <div class="layout">
         <aside class="sidebar">
@@ -451,8 +474,8 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
           const frontmatter = [
             '```yaml',
             `post_id: ${post.id}`,
-            `created_at: "${post.created_at}"`,
-            `updated_at: "${post.updated_at}"`,
+            `created_at: "${formatBeijingTimestamp(post.created_at)}"`,
+            `updated_at: "${formatBeijingTimestamp(post.updated_at)}"`,
             `visibility: "${post.visibility}"`,
             `pinned: ${post.pinned === 1 ? 'true' : 'false'}`,
             'tags:',
