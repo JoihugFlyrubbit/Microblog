@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { Env, Post, PostWithRelations } from '../types';
+import { enqueueR2Deletion } from '../lib/media-deletion';
 
 // Validation schemas
 const createPostSchema = z.object({
@@ -66,6 +67,30 @@ const normalizeTagNames = (content: string, tagNames: string[]) => {
   );
 };
 
+async function findInvalidAttachableMediaIds(
+  db: D1Database,
+  mediaIds: string[],
+  currentPostId?: number
+) {
+  const uniqueIds = Array.from(new Set(mediaIds));
+  const invalid: string[] = [];
+
+  for (const mediaId of uniqueIds) {
+    const row = await db.prepare(
+      'SELECT id, post_id, url FROM media WHERE id = ?'
+    ).bind(mediaId).first<{ id: number; post_id: number | null; url: string }>();
+
+    const ownedByCurrentPost = currentPostId !== undefined && row?.post_id === currentPostId;
+    const isConfirmed = row?.url.startsWith('r2://') || row?.url.startsWith('data:');
+    const isAttachableOwner = row?.post_id === null || ownedByCurrentPost;
+    if (!row || !isConfirmed || !isAttachableOwner) {
+      invalid.push(mediaId);
+    }
+  }
+
+  return invalid;
+}
+
 // List posts (public endpoint, but visibility filter depends on auth)
 postsRouter.get('/', optionalAuthMiddleware, zValidator('query', listPostsSchema), async (c) => {
   const db = c.env.DB;
@@ -128,12 +153,22 @@ postsRouter.get('/', optionalAuthMiddleware, zValidator('query', listPostsSchema
   const total = countResult?.total as number || 0;
 
   // Get posts
+  // P2.1: 不再返回 base64 data URL；改返 media metadata 列表（不含 url）。
+  // 前端按 `/media/<id>?v=<post.updated_at>` 拼 URL 走 Worker 代理。
+  // 用 SQLite json_group_array 一次性聚合所有 media metadata，避免列表多图退化为只显示首图。
   const postsQuery = `
     SELECT DISTINCT p.*,
       (SELECT COUNT(*) FROM appends WHERE post_id = p.id) as append_count,
       (SELECT COUNT(*) FROM media WHERE post_id = p.id) as media_count,
-      (SELECT url FROM media WHERE post_id = p.id ORDER BY created_at LIMIT 1) as preview_media_url,
-      (SELECT type FROM media WHERE post_id = p.id ORDER BY created_at LIMIT 1) as preview_media_type,
+      (SELECT json_group_array(json_object(
+          'id', id, 'type', type, 'width', width, 'height', height, 'size', size
+        ))
+       FROM (
+         SELECT id, type, width, height, size
+         FROM media
+         WHERE post_id = p.id
+         ORDER BY created_at
+       )) as preview_media_list,
       (SELECT GROUP_CONCAT(t.name, ',')
         FROM post_tags pt
         JOIN tags t ON t.id = pt.tag_id
@@ -145,14 +180,20 @@ postsRouter.get('/', optionalAuthMiddleware, zValidator('query', listPostsSchema
     LIMIT ? OFFSET ?
   `;
 
-  const posts = await db.prepare(postsQuery)
+  const result = await db.prepare(postsQuery)
     .bind(...params, limitNum, offset)
     .all();
+
+  // SQLite json_group_array 返回 string，需要 parse 后再返给前端
+  const postsList = (result.results as any[]).map((row) => ({
+    ...row,
+    preview_media_list: row.preview_media_list ? JSON.parse(row.preview_media_list) : [],
+  }));
 
   return c.json({
     success: true,
     data: {
-      posts: posts.results,
+      posts: postsList,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -208,10 +249,15 @@ postsRouter.get('/:id', optionalAuthMiddleware, async (c) => {
     `).bind(id).all(),
   ]);
 
+  const mediaRows = (media.results as any[]).map((item) => ({
+    ...item,
+    url: `/media/${item.id}?v=${encodeURIComponent(post.updated_at)}`,
+  }));
+
   const postWithRelations: PostWithRelations = {
     ...post as Post,
     appends: appends.results as any[],
-    media: media.results as any[],
+    media: mediaRows,
     tags: tags.results as any[],
   };
 
@@ -229,6 +275,14 @@ postsRouter.post('/', authMiddleware, zValidator('json', createPostSchema), asyn
   const normalizedTagNames = normalizeTagNames(normalizedContent, tagNames);
 
   try {
+    const invalidMediaIds = await findInvalidAttachableMediaIds(db, mediaIds);
+    if (invalidMediaIds.length > 0) {
+      return c.json({
+        success: false,
+        error: { code: 'INVALID_MEDIA_STATE', message: '媒体未完成上传或已被其他动态使用' },
+      }, 400);
+    }
+
     // Insert post
     const postResult = await db.prepare(
       'INSERT INTO posts (content, visibility, pinned) VALUES (?, ?, 0) RETURNING id'
@@ -263,9 +317,9 @@ postsRouter.post('/', authMiddleware, zValidator('json', createPostSchema), asyn
 
     // Update media to link to post
     if (mediaIds.length > 0) {
-      for (const mediaId of mediaIds) {
+      for (const mediaId of Array.from(new Set(mediaIds))) {
         await db.prepare(
-          'UPDATE media SET post_id = ? WHERE id = ?'
+          "UPDATE media SET post_id = ? WHERE id = ? AND post_id IS NULL AND (url LIKE 'r2://%' OR url LIKE 'data:%')"
         ).bind(postId, mediaId).run();
       }
     }
@@ -317,6 +371,14 @@ postsRouter.put('/:id', authMiddleware, zValidator('json', updatePostSchema), as
   }
 
   try {
+    const invalidMediaIds = await findInvalidAttachableMediaIds(db, mediaIds, id);
+    if (invalidMediaIds.length > 0) {
+      return c.json({
+        success: false,
+        error: { code: 'INVALID_MEDIA_STATE', message: '媒体未完成上传或已被其他动态使用' },
+      }, 400);
+    }
+
     // Update post
     await db.prepare(
       'UPDATE posts SET content = ?, visibility = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
@@ -347,9 +409,9 @@ postsRouter.put('/:id', authMiddleware, zValidator('json', updatePostSchema), as
     // Update media associations (detach old, reattach new). COS 对象不清理，避免误删。
     await db.prepare('UPDATE media SET post_id = NULL WHERE post_id = ?').bind(id).run();
     if (mediaIds.length > 0) {
-      for (const mediaId of mediaIds) {
+      for (const mediaId of Array.from(new Set(mediaIds))) {
         await db.prepare(
-          'UPDATE media SET post_id = ? WHERE id = ?'
+          "UPDATE media SET post_id = ? WHERE id = ? AND post_id IS NULL AND (url LIKE 'r2://%' OR url LIKE 'data:%')"
         ).bind(id, mediaId).run();
       }
     }
@@ -396,6 +458,14 @@ postsRouter.delete('/:id', authMiddleware, async (c) => {
   }
 
   try {
+    const mediaRows = await db.prepare(
+      'SELECT url FROM media WHERE post_id = ?'
+    ).bind(id).all<{ url: string }>();
+
+    for (const media of mediaRows.results) {
+      await enqueueR2Deletion(db, media.url);
+    }
+
     await db.prepare('DELETE FROM posts WHERE id = ?').bind(id).run();
 
     return c.json({

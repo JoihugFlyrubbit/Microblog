@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { Env } from '../types';
+import { enqueueR2Deletion, sweepR2DeletionQueue, sweepStalePendingR2Uploads } from '../lib/media-deletion';
 
 export const uploadRouter = new Hono<{ Bindings: Env }>();
 
@@ -18,32 +19,38 @@ const confirmUploadSchema = z.object({
   url: z.string(),
   type: z.enum(['image', 'video']),
   size: z.number(),
+  mediaId: z.number().optional(),
   width: z.number().optional(),
   height: z.number().optional(),
   duration: z.number().optional(),
 });
 
-// Local development: store base64 images in database
-// Production: use COS
+const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const allowedVideoTypes = new Set(['video/mp4', 'video/webm']);
+const maxUploadBytes = 100 * 1024 * 1024;
 
-// Generate unique key for upload
-function generateKey(filename: string): string {
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 10);
-  const ext = filename.split('.').pop() || '';
-  const safeExt = ext.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-  return `uploads/${timestamp}-${random}.${safeExt}`;
+function getMediaType(contentType: string): 'image' | 'video' | null {
+  if (allowedImageTypes.has(contentType)) return 'image';
+  if (allowedVideoTypes.has(contentType)) return 'video';
+  return null;
 }
 
-// Check if COS is configured
-function isCOSConfigured(env: Env): boolean {
-  return !!(
-    env.COS_SECRET_ID &&
-    env.COS_SECRET_KEY &&
-    env.COS_BUCKET &&
-    env.COS_REGION &&
-    env.COS_SECRET_ID !== 'your-tencent-cos-secret-id'
-  );
+function getExtension(filename: string, contentType: string): string {
+  const ext = filename.split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  if (ext) return ext;
+  if (contentType === 'image/jpeg') return 'jpg';
+  if (contentType === 'image/png') return 'png';
+  if (contentType === 'image/webp') return 'webp';
+  if (contentType === 'image/gif') return 'gif';
+  if (contentType === 'video/mp4') return 'mp4';
+  if (contentType === 'video/webm') return 'webm';
+  return 'bin';
+}
+
+// Generate unique key for upload
+function generateKey(mediaId: number, filename: string, contentType: string): string {
+  const random = Math.random().toString(36).substring(2, 10);
+  return `media/${mediaId}-${random}.${getExtension(filename, contentType)}`;
 }
 
 // Get presigned URL for COS upload (or local upload URL)
@@ -74,8 +81,8 @@ uploadRouter.post('/presigned', authMiddleware, async (c) => {
 
   const { filename, contentType, size } = parsed.data;
 
-  // Check if file type is allowed
-  if (!contentType.startsWith('image/') && !contentType.startsWith('video/')) {
+  const mediaType = getMediaType(contentType);
+  if (!mediaType) {
     return c.json({
       success: false,
       error: { code: 'INVALID_TYPE', message: '只允许上传图片或视频' },
@@ -83,55 +90,48 @@ uploadRouter.post('/presigned', authMiddleware, async (c) => {
   }
 
   try {
-    const key = generateKey(filename);
-
-    if (contentType.startsWith('video/') && !isCOSConfigured(c.env)) {
+    if (mediaType === 'video') {
       return c.json({
         success: false,
         error: {
           code: 'LOCAL_VIDEO_UNSUPPORTED',
-          message: '当前本地开发环境暂不支持视频上传，请先配置 COS 后再试。',
+          message: '视频上传将在 Range 读路径验证后开放。',
         },
       }, 400);
     }
 
-    // For local development without COS, return a local upload endpoint
-    if (!isCOSConfigured(c.env)) {
-      // Return a local upload URL
-      const localUrl = new URL(`./local/${encodeURIComponent(key)}`, c.req.url).toString();
+    const reserved = await c.env.DB.prepare(`
+      INSERT INTO media (post_id, type, url, size, width, height, duration)
+      VALUES (NULL, ?, 'pending:r2', ?, NULL, NULL, NULL)
+      RETURNING id
+    `).bind(mediaType, size).first<{ id: number }>();
 
-      return c.json({
-        success: true,
-        data: {
-          key,
-          url: localUrl,
-          authorization: 'local', // Marker for local upload
-          expireTime: Date.now() + 3600000, // 1 hour
-          headers: {
-            'Content-Type': contentType,
-          },
-          mode: 'local', // Tell frontend to use local upload mode
-        },
-      });
+    if (!reserved) {
+      throw new Error('Failed to reserve media row');
     }
 
-    // COS mode (production)
-    const { COS_SECRET_ID, COS_SECRET_KEY, COS_BUCKET, COS_REGION } = c.env;
+    const key = generateKey(reserved.id, filename, contentType);
+    await c.env.DB.prepare(
+      'UPDATE media SET url = ? WHERE id = ? AND url = ?'
+    ).bind(`pending:r2:${key}`, reserved.id, 'pending:r2').run();
 
-    // Generate COS presigned URL (simplified - in production implement proper COS signature)
-    const url = `https://${COS_BUCKET}.cos.${COS_REGION}.myqcloud.com/${key}`;
+    const uploadUrl = new URL(`./r2/${encodeURIComponent(key)}`, c.req.url);
+    uploadUrl.searchParams.set('mediaId', String(reserved.id));
+    uploadUrl.searchParams.set('size', String(size));
+    uploadUrl.searchParams.set('type', mediaType);
 
     return c.json({
       success: true,
       data: {
+        mediaId: reserved.id,
         key,
-        url,
-        authorization: 'cos', // Frontend will handle COS upload
-        expireTime: Date.now() + 600000, // 10 minutes
+        url: uploadUrl.toString(),
+        authorization: 'r2',
+        expireTime: Date.now() + 600000,
         headers: {
           'Content-Type': contentType,
         },
-        mode: 'cos',
+        mode: 'r2',
       },
     });
   } catch (error) {
@@ -139,6 +139,79 @@ uploadRouter.post('/presigned', authMiddleware, async (c) => {
     return c.json({
       success: false,
       error: { code: 'GENERATE_FAILED', message: '生成上传地址失败' },
+    }, 500);
+  }
+});
+
+// R2 upload endpoint - receives binary body and writes to R2.
+uploadRouter.put('/r2/:key', authMiddleware, async (c) => {
+  const key = decodeURIComponent(c.req.param('key'));
+  const mediaId = Number(c.req.query('mediaId'));
+  const declaredSize = Number(c.req.query('size'));
+  const declaredType = c.req.query('type');
+  const contentType = c.req.header('Content-Type')?.split(';')[0].trim().toLowerCase() || '';
+  const contentLengthHeader = c.req.header('Content-Length');
+  const contentLength = contentLengthHeader ? Number(contentLengthHeader) : NaN;
+  const mediaType = getMediaType(contentType);
+
+  if (!Number.isInteger(mediaId) || mediaId <= 0 || !key.startsWith(`media/${mediaId}-`)) {
+    return c.json({
+      success: false,
+      error: { code: 'INVALID_UPLOAD_KEY', message: '上传地址无效' },
+    }, 400);
+  }
+
+  if (!mediaType || mediaType !== declaredType) {
+    return c.json({
+      success: false,
+      error: { code: 'INVALID_TYPE', message: '文件类型无效' },
+    }, 400);
+  }
+
+  if (!Number.isFinite(contentLength) || contentLength <= 0 || contentLength > maxUploadBytes || contentLength !== declaredSize) {
+    return c.json({
+      success: false,
+      error: { code: 'INVALID_SIZE', message: '文件大小无效' },
+    }, 400);
+  }
+
+  if (!c.req.raw.body) {
+    return c.json({
+      success: false,
+      error: { code: 'EMPTY_BODY', message: '文件内容为空' },
+    }, 400);
+  }
+
+  const reserved = await c.env.DB.prepare(
+    'SELECT id, url FROM media WHERE id = ? AND post_id IS NULL'
+  ).bind(mediaId).first<{ id: number; url: string }>();
+
+  if (!reserved || reserved.url !== `pending:r2:${key}`) {
+    return c.json({
+      success: false,
+      error: { code: 'INVALID_MEDIA_STATE', message: '媒体记录状态无效' },
+    }, 409);
+  }
+
+  try {
+    await c.env.MEDIA_BUCKET.put(key, c.req.raw.body, {
+      httpMetadata: { contentType },
+      customMetadata: {
+        mediaId: String(mediaId),
+        size: String(contentLength),
+        type: mediaType,
+      },
+    });
+
+    return c.json({
+      success: true,
+      data: { key, mediaId },
+    });
+  } catch (error) {
+    console.error('R2 upload error:', error);
+    return c.json({
+      success: false,
+      error: { code: 'UPLOAD_FAILED', message: '保存文件失败' },
     }, 500);
   }
 });
@@ -204,9 +277,79 @@ uploadRouter.post('/local/:key', authMiddleware, async (c) => {
 // Confirm upload (for COS mode, or direct pass-through for local mode)
 uploadRouter.post('/confirm', authMiddleware, zValidator('json', confirmUploadSchema), async (c) => {
   const db = c.env.DB;
-  const { key, url, type, size, width, height, duration } = c.req.valid('json');
+  const { key, url, type, size, mediaId, width, height, duration } = c.req.valid('json');
 
   try {
+    if (url.startsWith('r2://') || key.startsWith('media/')) {
+      if (!mediaId || !key.startsWith(`media/${mediaId}-`)) {
+        return c.json({
+          success: false,
+          error: { code: 'INVALID_UPLOAD_KEY', message: '上传地址无效' },
+        }, 400);
+      }
+
+      const object = await c.env.MEDIA_BUCKET.head(key);
+      if (!object || object.size !== size) {
+        return c.json({
+          success: false,
+          error: { code: 'UPLOAD_NOT_FOUND', message: '上传文件未找到或大小不一致' },
+        }, 400);
+      }
+
+      const reserved = await db.prepare(
+        'SELECT id, type, size, url FROM media WHERE id = ? AND post_id IS NULL'
+      ).bind(mediaId).first<{ id: number; type: 'image' | 'video'; size: number; url: string }>();
+
+      const objectContentType = object.httpMetadata?.contentType?.split(';')[0].trim().toLowerCase();
+      if (
+        !reserved ||
+        reserved.url !== `pending:r2:${key}` ||
+        reserved.type !== type ||
+        reserved.size !== size ||
+        getMediaType(objectContentType || '') !== type ||
+        object.customMetadata?.mediaId !== String(mediaId) ||
+        object.customMetadata?.size !== String(size) ||
+        object.customMetadata?.type !== type
+      ) {
+        return c.json({
+          success: false,
+          error: { code: 'INVALID_MEDIA_STATE', message: '媒体记录状态无效' },
+        }, 409);
+      }
+
+      const result = await db.prepare(`
+        UPDATE media
+        SET type = ?, url = ?, size = ?, width = ?, height = ?, duration = ?
+        WHERE id = ? AND post_id IS NULL AND url = ?
+        RETURNING id
+      `).bind(
+        type,
+        `r2://${key}`,
+        size,
+        width || null,
+        height || null,
+        duration || null,
+        mediaId,
+        `pending:r2:${key}`
+      ).first<{ id: number }>();
+
+      if (!result) {
+        return c.json({
+          success: false,
+          error: { code: 'INVALID_MEDIA_STATE', message: '媒体记录状态无效' },
+        }, 409);
+      }
+
+      return c.json({
+        success: true,
+        data: {
+          mediaId: result.id,
+          key,
+          url: `/media/${result.id}`,
+        },
+      });
+    }
+
     // For local mode with base64 data, the record is already created in /local/:key
     // Check if media already exists (local mode)
     const existingMedia = await db.prepare(
@@ -224,48 +367,34 @@ uploadRouter.post('/confirm', authMiddleware, zValidator('json', confirmUploadSc
       });
     }
 
-    // For COS mode, insert new record
-    // Validate the URL belongs to our bucket (security check)
-    if (isCOSConfigured(c.env)) {
-      const { COS_BUCKET, COS_REGION } = c.env;
-      if (!url.includes(`${COS_BUCKET}.cos.${COS_REGION}.myqcloud.com`)) {
-        return c.json({
-          success: false,
-          error: { code: 'INVALID_URL', message: '上传地址无效' },
-        }, 400);
-      }
-    }
-
-    const result = await db.prepare(`
-      INSERT INTO media (post_id, type, url, size, width, height, duration)
-      VALUES (NULL, ?, ?, ?, ?, ?, ?)
-      RETURNING id
-    `).bind(
-      type,
-      url,
-      size,
-      width || null,
-      height || null,
-      duration || null
-    ).first();
-
-    if (!result) {
-      throw new Error('Failed to insert media record');
-    }
-
     return c.json({
-      success: true,
-      data: {
-        mediaId: result.id,
-        key,
-        url,
-      },
-    });
+      success: false,
+      error: { code: 'UNSUPPORTED_UPLOAD_MODE', message: '上传模式已停用，请刷新页面后重试' },
+    }, 400);
   } catch (error) {
     console.error('Confirm upload error:', error);
     return c.json({
       success: false,
       error: { code: 'CONFIRM_FAILED', message: '保存媒体记录失败' },
+    }, 500);
+  }
+});
+
+uploadRouter.post('/sweep-deletions', authMiddleware, async (c) => {
+  try {
+    const [deletionQueue, stalePendingUploads] = await Promise.all([
+      sweepR2DeletionQueue(c.env),
+      sweepStalePendingR2Uploads(c.env),
+    ]);
+    return c.json({
+      success: true,
+      data: { deletionQueue, stalePendingUploads },
+    });
+  } catch (error) {
+    console.error('Sweep R2 deletion queue error:', error);
+    return c.json({
+      success: false,
+      error: { code: 'SWEEP_FAILED', message: '清理 R2 删除队列失败' },
     }, 500);
   }
 });
@@ -294,6 +423,7 @@ uploadRouter.delete('/:id', authMiddleware, async (c) => {
       }, 404);
     }
 
+    await enqueueR2Deletion(db, typeof media.url === 'string' ? media.url : null);
     await db.prepare('DELETE FROM media WHERE id = ?').bind(id).run();
 
     return c.json({

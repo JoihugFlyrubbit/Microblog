@@ -2,9 +2,10 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { postsApi, uploadApi, Media, PostWithRelations, TagWithCount, tagsApi } from "@/lib/api";
+import { postsApi, Media, PostWithRelations, TagWithCount, tagsApi } from "@/lib/api";
 import { MediaUploader } from "./MediaUploader";
 import { ImageCropper } from "./ImageCropper";
+import { uploadFileToMedia } from "@/lib/upload";
 
 async function urlToFile(url: string, filename: string): Promise<File> {
   const res = await fetch(url);
@@ -13,55 +14,7 @@ async function urlToFile(url: string, filename: string): Promise<File> {
 }
 
 async function uploadCroppedImage(file: File): Promise<Media> {
-  const presigned = await uploadApi.getPresignedUrl({
-    filename: file.name,
-    contentType: file.type,
-    size: file.size,
-  });
-  if (!presigned.success || !presigned.data) {
-    throw new Error(presigned.error?.message || "获取上传地址失败");
-  }
-  const { url, mode } = presigned.data;
-  if (mode !== "local") {
-    throw new Error("当前仅支持本地存储模式下重新上传裁剪");
-  }
-  const dataUrl: string = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-  const dimensions = await new Promise<{ width: number; height: number }>((resolve) => {
-    const img = new window.Image();
-    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-    img.onerror = () => resolve({ width: 0, height: 0 });
-    img.src = URL.createObjectURL(file);
-  });
-  const res = await fetch(url, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      data: dataUrl,
-      type: "image",
-      size: file.size,
-      width: dimensions.width,
-      height: dimensions.height,
-    }),
-  });
-  if (!res.ok) throw new Error("本地上传失败");
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error?.message || "本地上传失败");
-  return {
-    id: data.data.mediaId,
-    post_id: 0,
-    type: "image",
-    url: data.data.url,
-    size: file.size,
-    width: undefined,
-    height: undefined,
-    created_at: new Date().toISOString(),
-  };
+  return uploadFileToMedia(file, { compress: false });
 }
 
 interface PostFormProps {

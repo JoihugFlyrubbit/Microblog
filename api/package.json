@@ -9,6 +9,7 @@
     "db:create": "wrangler d1 create microblog-db",
     "db:migrate": "wrangler d1 migrations apply microblog-db",
     "db:generate": "wrangler d1 migrations create microblog-db init",
+    "media:migrate:r2": "node scripts/migrate-base64-to-r2.js",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],

@@ -153,53 +153,28 @@ function mimeToExt(mime) {
   return map[mime?.toLowerCase()] || '';
 }
 
-// 从 url 提取 attachment 本地文件名
-function attachmentFilename(url) {
-  const hash = crypto.createHash('sha1').update(url).digest('hex').slice(0, 12);
-  // data URL: data:image/jpeg;base64,xxxxx
-  if (url.startsWith('data:')) {
-    const m = url.match(/^data:([^;,]+)/);
-    const ext = m ? mimeToExt(m[1]) : '';
-    return sanitizeFilename(`${hash}${ext}`);
-  }
-  // http(s) URL
-  let last;
-  try {
-    const u = new URL(url);
-    last = decodeURIComponent(u.pathname.split('/').filter(Boolean).pop() || 'file');
-  } catch {
-    last = url.split('/').pop() || 'file';
-  }
-  last = last.split('?')[0];
-  const ext = path.extname(last) || '';
-  const base = path.basename(last, ext);
-  return sanitizeFilename(`${hash}-${base}${ext}`);
+// 从 media metadata 生成稳定 attachment 本地文件名。不要用 download_url：token 每次 export 都会变。
+function attachmentFilename(media) {
+  const ext = mimeToExt(media.mime) || (media.type === 'image' ? '.jpg' : '');
+  return sanitizeFilename(`media-${media.id}${ext}`);
 }
 
-// 落盘 attachment（base64 直接 decode；http 走 fetch），返回相对文件名
-async function ensureAttachment(url, attachmentsDir) {
-  const fname = attachmentFilename(url);
+// 落盘 attachment（export attachment token URL），返回相对文件名
+async function ensureAttachment(media, attachmentsDir, apiBase) {
+  const fname = attachmentFilename(media);
   const target = path.join(attachmentsDir, fname);
   if (fs.existsSync(target)) {
     return fname;
   }
-  let buf;
-  if (url.startsWith('data:')) {
-    const idx = url.indexOf(',');
-    if (idx < 0) throw new Error(`无效的 data URL`);
-    const meta = url.slice(5, idx); // image/jpeg;base64
-    const payload = url.slice(idx + 1);
-    if (!/;base64$/i.test(meta)) {
-      throw new Error(`仅支持 base64 编码的 data URL，当前 meta=${meta}`);
-    }
-    buf = Buffer.from(payload, 'base64');
-  } else {
-    const res = await fetch(url);
-    if (!res.ok) {
-      throw new Error(`下载图片失败：HTTP ${res.status}`);
-    }
-    buf = Buffer.from(await res.arrayBuffer());
+
+  const downloadUrl = media.download_url?.startsWith('http')
+    ? media.download_url
+    : `${apiBase}${media.download_url}`;
+  const res = await fetch(downloadUrl);
+  if (!res.ok) {
+    throw new Error(`下载图片失败：HTTP ${res.status}`);
   }
+  const buf = Buffer.from(await res.arrayBuffer());
   atomicWriteBuffer(target, buf);
   return fname;
 }
@@ -241,7 +216,7 @@ function toBeijingTimeString(utcStr) {
   return `${Y}-${M}-${D} ${h}:${m}:${s}`;
 }
 
-// 算指纹：覆盖正文、updated_at、tags、media URLs、appends（id+content+created_at）
+// 算指纹：覆盖正文、updated_at、tags、media metadata、appends（id+content+created_at）
 function postFingerprint(post, postAppends, postMedia, postTagNames) {
   const payload = JSON.stringify({
     _v: RENDER_FORMAT_VERSION,
@@ -250,7 +225,7 @@ function postFingerprint(post, postAppends, postMedia, postTagNames) {
     v: post.visibility,
     p: post.pinned,
     t: postTagNames.slice().sort(),
-    m: postMedia.map((m) => `${m.type}:${m.url}`).sort(),
+    m: postMedia.map((m) => `${m.id}:${m.type}:${m.size}:${m.width || ''}:${m.height || ''}`).sort(),
     a: postAppends
       .slice()
       .sort((x, y) => x.id - y.id)
@@ -293,7 +268,7 @@ function renderPostMarkdown({ post, postAppends, postMedia, postTagNames, attach
 
   const mediaBlock = postMedia.length > 0
     ? '\n\n' + postMedia.map((m) => {
-        const local = attachmentMap.get(m.url);
+        const local = attachmentMap.get(m.id);
         if (!local) return '';
         return m.type === 'image'
           ? `![](attachments/${local})`
@@ -387,9 +362,9 @@ async function syncPosts(config, data) {
     const attachmentMap = new Map();
     for (const m of postMedia) {
       try {
-        const before = fs.existsSync(path.join(attachmentsDir, attachmentFilename(m.url)));
-        const fname = await ensureAttachment(m.url, attachmentsDir);
-        attachmentMap.set(m.url, fname);
+        const before = fs.existsSync(path.join(attachmentsDir, attachmentFilename(m)));
+        const fname = await ensureAttachment(m, attachmentsDir, config.apiBase);
+        attachmentMap.set(m.id, fname);
         if (!before) imagesDownloaded++;
       } catch (err) {
         console.error(`[${timestamp()}] 警告：post ${post.id} 图片处理失败：${err.message}`);

@@ -53,6 +53,13 @@ CREATE TABLE IF NOT EXISTS media (
 
 CREATE INDEX idx_media_post_id ON media(post_id);
 
+-- R2 object deletion queue. D1 rows are removed first; R2 objects are deleted asynchronously.
+CREATE TABLE IF NOT EXISTS media_deletion_queue (
+    r2_key TEXT PRIMARY KEY,
+    queued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
+);
+
 -- Tags table
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

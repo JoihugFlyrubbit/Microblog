@@ -36,6 +36,88 @@ const formatMarkdownDate = (value: string) => {
   });
 };
 
+function base64UrlEncode(value: ArrayBuffer | string) {
+  const binary = typeof value === 'string'
+    ? value
+    : String.fromCharCode(...new Uint8Array(value));
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+}
+
+function base64UrlDecode(value: string) {
+  const padded = value.replaceAll('-', '+').replaceAll('_', '/').padEnd(Math.ceil(value.length / 4) * 4, '=');
+  return atob(padded);
+}
+
+async function signAttachmentToken(env: Env, media: { id: number; post_id: number | null; post_visibility: string | null }, expiresAt: number) {
+  const payload = JSON.stringify({
+    mediaId: media.id,
+    postId: media.post_id,
+    visibility: media.post_visibility || 'orphan',
+    expiresAt,
+  });
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(env.SESSION_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
+  return `${base64UrlEncode(payload)}.${base64UrlEncode(signature)}`;
+}
+
+async function verifyAttachmentToken(env: Env, token: string, mediaId: number) {
+  const [payloadPart, signaturePart] = token.split('.');
+  if (!payloadPart || !signaturePart) return null;
+
+  let payload: {
+    mediaId: number;
+    postId: number | null;
+    visibility: string;
+    expiresAt: number;
+  };
+
+  try {
+    payload = JSON.parse(base64UrlDecode(payloadPart));
+  } catch {
+    return null;
+  }
+  if (payload.mediaId !== mediaId || !Number.isFinite(payload.expiresAt) || Date.now() > payload.expiresAt) {
+    return null;
+  }
+
+  const expected = await signAttachmentToken(env, {
+    id: payload.mediaId,
+    post_id: payload.postId,
+    post_visibility: payload.visibility === 'orphan' ? null : payload.visibility,
+  }, payload.expiresAt);
+  return expected === token ? payload : null;
+}
+
+function inferMime(media: { type: string; url?: string }) {
+  if (media.url?.startsWith('data:')) {
+    const match = /^data:([^;]+);base64,/.exec(media.url);
+    if (match) return match[1];
+  }
+  return media.type === 'image' ? 'image/jpeg' : 'application/octet-stream';
+}
+
+async function toExportMedia(env: Env, mediaRows: any[]) {
+  const expiresAt = Date.now() + 60 * 60 * 1000;
+  return Promise.all(mediaRows.map(async (item) => ({
+    id: item.id,
+    post_id: item.post_id,
+    type: item.type,
+    mime: inferMime(item),
+    size: item.size,
+    width: item.width,
+    height: item.height,
+    duration: item.duration,
+    created_at: item.created_at,
+    download_url: `/export/attachments/${item.id}?token=${await signAttachmentToken(env, item, expiresAt)}`,
+  })));
+}
+
 // Export all data
 exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (c) => {
   const db = c.env.DB;
@@ -63,9 +145,9 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
     // Get media
     const mediaWhere = includePrivate
       ? ''
-      : "WHERE m.post_id IS NULL OR p.visibility = 'public'";
+      : "WHERE p.visibility = 'public'";
     const media = await db.prepare(`
-      SELECT m.* FROM media m
+      SELECT m.*, p.visibility as post_visibility FROM media m
       LEFT JOIN posts p ON m.post_id = p.id
       ${mediaWhere}
       ORDER BY m.created_at DESC
@@ -84,12 +166,14 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
       ORDER BY t.name ASC
     `).all();
 
+    const exportMedia = await toExportMedia(c.env, media.results as any[]);
+
     const exportData = {
       exported_at: new Date().toISOString(),
       include_private: includePrivate,
       posts: posts.results,
       appends: appends.results,
-      media: media.results,
+      media: exportMedia,
       tags: tags.results,
     };
 
@@ -133,7 +217,7 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
       }
 
       const mediaByPost = new Map<number, any[]>();
-      for (const mediaItem of media.results as Array<{ post_id: number | null }>) {
+      for (const mediaItem of exportMedia as Array<{ post_id: number | null }>) {
         if (!mediaItem.post_id) continue;
         const current = mediaByPost.get(mediaItem.post_id) || [];
         current.push(mediaItem);
@@ -163,9 +247,9 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
 
           const mediaHtml = postMedia.map((item) => {
             if (item.type === 'image') {
-              return `<img src="${escapeHtml(item.url)}" alt="" loading="lazy" />`;
+              return `<img src="${escapeHtml(item.download_url)}" alt="" loading="lazy" />`;
             }
-            return `<video src="${escapeHtml(item.url)}" controls preload="metadata"></video>`;
+            return `<video src="${escapeHtml(item.download_url)}" controls preload="metadata"></video>`;
           }).join('');
 
           const tagsHtml = postTagNames.map((tagName) =>
@@ -344,7 +428,7 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
       }
 
       const mediaByPost = new Map<number, any[]>();
-      for (const mediaItem of media.results as Array<{ post_id: number | null }>) {
+      for (const mediaItem of exportMedia as Array<{ post_id: number | null }>) {
         if (!mediaItem.post_id) continue;
         const current = mediaByPost.get(mediaItem.post_id) || [];
         current.push(mediaItem);
@@ -389,8 +473,8 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
           const mediaBlock = postMedia.length > 0
             ? `\n### 媒体\n${postMedia.map((item) =>
                 item.type === 'image'
-                  ? `- ![](${escapeMarkdown(String(item.url))})`
-                  : `- [视频](${escapeMarkdown(String(item.url))})`
+                  ? `- ![](${escapeMarkdown(String(item.download_url))})`
+                  : `- [视频](${escapeMarkdown(String(item.download_url))})`
               ).join('\n')}\n`
             : '';
 
@@ -448,6 +532,67 @@ exportRouter.post('/', authMiddleware, zValidator('json', exportSchema), async (
   }
 });
 
+// Short-lived attachment download endpoint used by obsidian-sync.
+exportRouter.get('/attachments/:id', async (c) => {
+  const id = Number(c.req.param('id'));
+  const token = c.req.query('token') || '';
+  if (!Number.isInteger(id) || id <= 0) {
+    return c.json({ success: false, error: { code: 'INVALID_ID', message: 'Invalid media ID' } }, 400);
+  }
+
+  const tokenPayload = await verifyAttachmentToken(c.env, token, id);
+  if (!tokenPayload) {
+    return c.json({ success: false, error: { code: 'INVALID_TOKEN', message: 'Invalid or expired token' } }, 403);
+  }
+
+  const media = await c.env.DB.prepare(
+    `SELECT m.id, m.url, m.type, m.size, m.post_id, p.visibility as post_visibility
+     FROM media m
+     LEFT JOIN posts p ON p.id = m.post_id
+     WHERE m.id = ?`
+  ).bind(id).first<{ id: number; url: string; type: 'image' | 'video'; size: number; post_id: number | null; post_visibility: string | null }>();
+
+  if (!media) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Media not found' } }, 404);
+  }
+
+  const currentVisibility = media.post_visibility || 'orphan';
+  if (media.post_id !== tokenPayload.postId || currentVisibility !== tokenPayload.visibility) {
+    return c.json({ success: false, error: { code: 'INVALID_TOKEN_SCOPE', message: 'Attachment token scope changed' } }, 403);
+  }
+
+  if (media.url.startsWith('data:')) {
+    const match = /^data:([^;]+);base64,(.+)$/s.exec(media.url);
+    if (!match) {
+      return c.json({ success: false, error: { code: 'CORRUPT_DATA_URL', message: 'Malformed data URL' } }, 500);
+    }
+    const binary = Uint8Array.from(atob(match[2]), (ch) => ch.charCodeAt(0));
+    return new Response(binary.buffer as ArrayBuffer, {
+      headers: {
+        'Content-Type': match[1],
+        'Content-Length': String(binary.byteLength),
+        'Cache-Control': 'private, no-store',
+      },
+    });
+  }
+
+  if (!media.url.startsWith('r2://')) {
+    return c.json({ success: false, error: { code: 'UNSUPPORTED_MEDIA_URL', message: 'Unsupported media storage format' } }, 500);
+  }
+
+  const object = await c.env.MEDIA_BUCKET.get(media.url.slice('r2://'.length));
+  if (!object) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Media object not found' } }, 404);
+  }
+
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('Content-Type', headers.get('Content-Type') || inferMime(media));
+  headers.set('Content-Length', String(object.size));
+  headers.set('Cache-Control', 'private, no-store');
+  return new Response(object.body, { headers });
+});
+
 // Export single post
 exportRouter.get('/post/:id', authMiddleware, async (c) => {
   const db = c.env.DB;
@@ -478,7 +623,11 @@ exportRouter.get('/post/:id', authMiddleware, async (c) => {
     ).bind(id).all();
 
     const media = await db.prepare(
-      'SELECT * FROM media WHERE post_id = ? ORDER BY created_at'
+      `SELECT m.*, p.visibility as post_visibility
+       FROM media m
+       JOIN posts p ON p.id = m.post_id
+       WHERE m.post_id = ?
+       ORDER BY m.created_at`
     ).bind(id).all();
 
     const tags = await db.prepare(`
@@ -493,7 +642,7 @@ exportRouter.get('/post/:id', authMiddleware, async (c) => {
         post: {
           ...post,
           appends: appends.results,
-          media: media.results,
+          media: await toExportMedia(c.env, media.results as any[]),
           tags: tags.results,
         },
       },

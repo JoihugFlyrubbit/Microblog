@@ -110,6 +110,14 @@ export const authApi = {
 };
 
 // Posts API
+export interface MediaPreview {
+  id: number;
+  type: 'image' | 'video';
+  width?: number;
+  height?: number;
+  size?: number;
+}
+
 export interface Post {
   id: number;
   content: string;
@@ -119,8 +127,8 @@ export interface Post {
   updated_at: string;
   append_count?: number;
   media_count?: number;
-  preview_media_url?: string;
-  preview_media_type?: 'image' | 'video';
+  // P2.1: list 接口返完整 media metadata 列表，前端拼 `/media/<id>?v=<updated_at>` 经 Worker 代理。
+  preview_media_list?: MediaPreview[];
   preview_tags?: string;
 }
 
@@ -224,15 +232,16 @@ export const postsApi = {
 
 // Upload API
 export interface PresignedUrlResponse {
+  mediaId: number;
   key: string;
   url: string;
   authorization: string;
   expireTime: number;
   headers: {
     'Content-Type': string;
-    'x-cos-content-type': string;
+    'x-cos-content-type'?: string;
   };
-  mode?: 'local' | 'cos';
+  mode?: 'local' | 'cos' | 'r2';
 }
 
 export interface UploadConfirmData {
@@ -240,6 +249,7 @@ export interface UploadConfirmData {
   url: string;
   type: 'image' | 'video';
   size: number;
+  mediaId?: number;
   width?: number;
   height?: number;
   duration?: number;

@@ -91,10 +91,38 @@ export function PostList({ date, tag, visibility = 'public', pinned, canManage =
     );
   }
 
+  // 分页控件：纯文字「上一页 / 第 X/Y 页（条数可选）/ 下一页」。
+  // compact=true 时省略 "(X 条)"（用于顶部行，旁边已显示"共 X 条"避免重复）。
+  const renderPaginator = (compact: boolean) => (
+    <div className="flex items-center gap-3 text-sm">
+      <button
+        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+        disabled={currentPage === 1}
+        className="text-[#5d8fd6] hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline"
+      >
+        上一页
+      </button>
+      <span className="text-soft">
+        第 {currentPage} / {pagination!.totalPages} 页
+        {!compact && ` (${pagination!.total} 条)`}
+      </span>
+      <button
+        onClick={() => setCurrentPage((p) => Math.min(pagination!.totalPages, p + 1))}
+        disabled={currentPage === pagination!.totalPages}
+        className="text-[#5d8fd6] hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline"
+      >
+        下一页
+      </button>
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       {pagination && (
-        <p className="text-sm text-soft">共 {pagination.total} 条</p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-soft">共 {pagination.total} 条</p>
+          {pagination.totalPages > 1 && renderPaginator(true)}
+        </div>
       )}
       {/* Posts */}
       <div className="space-y-4">
@@ -115,25 +143,8 @@ export function PostList({ date, tag, visibility = 'public', pinned, canManage =
 
       {/* Pagination */}
       {pagination && pagination.totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 pt-4">
-          <button
-            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-            className="px-3 py-1 rounded border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-          >
-            上一页
-          </button>
-          <span className="text-sm text-gray-600">
-            第 {currentPage} / {pagination.totalPages} 页
-            ({pagination.total} 条)
-          </span>
-          <button
-            onClick={() => setCurrentPage(p => Math.min(pagination.totalPages, p + 1))}
-            disabled={currentPage === pagination.totalPages}
-            className="px-3 py-1 rounded border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-          >
-            下一页
-          </button>
+        <div className="flex items-center justify-center pt-4">
+          {renderPaginator(false)}
         </div>
       )}
 

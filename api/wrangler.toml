@@ -15,6 +15,10 @@ binding = "DB"
 database_name = "microblog-db-local"
 database_id = "local"
 
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "microblog-media"
+
 [env.production]
 vars = { ENVIRONMENT = "production", ALLOW_ADMIN_BOOTSTRAP = "false" }
 
@@ -22,6 +26,10 @@ vars = { ENVIRONMENT = "production", ALLOW_ADMIN_BOOTSTRAP = "false" }
 binding = "DB"
 database_name = "microblog-db"
 database_id = "your-database-id-here"
+
+[[env.production.r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "microblog-media"
 
 # Secrets (set via wrangler secret put):
 # - SESSION_SECRET

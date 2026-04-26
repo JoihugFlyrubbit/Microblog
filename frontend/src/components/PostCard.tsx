@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { postsApi, Post, PostWithRelations } from "@/lib/api";
+import { postsApi, Post, PostWithRelations, getApiBase } from "@/lib/api";
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown, { Components } from "react-markdown";
@@ -95,8 +95,14 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
   const swipeStartX = useRef<number | null>(null);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const hasPostRelations = 'appends' in post;
-  const compactPreview = !hasPostRelations && post.preview_media_url
-    ? [{ id: `preview-${post.id}`, url: post.preview_media_url, type: post.preview_media_type || "image" }]
+  const compactPreview = !hasPostRelations && post.preview_media_list && post.preview_media_list.length > 0
+    ? post.preview_media_list.map((m) => ({
+        id: `preview-${post.id}-${m.id}`,
+        url: `${getApiBase()}/media/${m.id}?v=${encodeURIComponent(post.updated_at)}`,
+        type: m.type,
+        width: m.width,
+        height: m.height,
+      }))
     : [];
   const mediaItems = hasPostRelations ? post.media : compactPreview;
   const showMetaBeforeAppends = detail && hasPostRelations && post.appends.length > 0;
@@ -122,13 +128,9 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
     }
   }, [post, hasPostRelations]);
 
-  useEffect(() => {
-    if (hasPostRelations || !compact || detail || (post.media_count || 0) <= 1) {
-      return;
-    }
-
-    void refreshRelations();
-  }, [compact, detail, hasPostRelations, post]);
+  // P2.1: 删除 list 阶段自动 refreshRelations（codex F-007）。
+  // 多图卡片不再在列表阶段触发 N+1 详情请求；首图通过 /media/:id?v=... 加载，
+  // 多图轮播在用户进入详情时再拉。
 
   useEffect(() => {
     if (lightboxIndex === null) return;
@@ -198,7 +200,6 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
   const activeLightboxItem = lightboxIndex !== null ? currentMediaItems[lightboxIndex] : null;
   const mediaCount = currentMediaItems.length;
   const useGalleryGrid = mediaCount > 1;
-  const shouldWaitForGallery = compact && !detail && !currentHasRelations && (post.media_count || 0) > 1;
 
   async function ensureRelationsLoaded() {
     if (currentHasRelations) return;
@@ -346,14 +347,6 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
       )}
 
       {/* Media */}
-      {shouldWaitForGallery && !carousel && (
-        <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
-          {[0, 1, 2].map((index) => (
-            <div key={index} className="aspect-square rounded-[10px] bg-white/70" />
-          ))}
-        </div>
-      )}
-
       {currentMediaItems.length > 0 && carousel && (
         <div className="relative mt-4 overflow-hidden rounded-[10px] bg-white">
           {(() => {
@@ -416,7 +409,7 @@ export function PostCard({ post, onClick, compact = false, wideMedia = false, fl
         </div>
       )}
 
-      {!shouldWaitForGallery && currentMediaItems.length > 0 && !carousel && (
+      {currentMediaItems.length > 0 && !carousel && (
         <div className="mt-4">
           <div
             className={

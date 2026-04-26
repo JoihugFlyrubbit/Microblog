@@ -10,6 +10,7 @@ declare module 'hono' {
 
 export interface Env {
   DB: D1Database;
+  MEDIA_BUCKET: R2Bucket;
   SESSION_SECRET: string;
   ALLOW_ADMIN_BOOTSTRAP?: string;
   COS_SECRET_ID: string;
