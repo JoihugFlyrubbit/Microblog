@@ -406,7 +406,7 @@ postsRouter.put('/:id', authMiddleware, zValidator('json', updatePostSchema), as
       }
     }
 
-    // Update media associations (detach old, reattach new). COS 对象不清理，避免误删。
+    // Update media associations (detach old, reattach new). R2 cleanup is queued separately.
     await db.prepare('UPDATE media SET post_id = NULL WHERE post_id = ?').bind(id).run();
     if (mediaIds.length > 0) {
       for (const mediaId of Array.from(new Set(mediaIds))) {

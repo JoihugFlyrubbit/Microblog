@@ -53,7 +53,7 @@ function generateKey(mediaId: number, filename: string, contentType: string): st
   return `media/${mediaId}-${random}.${getExtension(filename, contentType)}`;
 }
 
-// Get presigned URL for COS upload (or local upload URL)
+// Reserve a media row and return the authenticated R2 upload URL.
 uploadRouter.post('/presigned', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = presignedUrlSchema.safeParse(body);
@@ -274,7 +274,7 @@ uploadRouter.post('/local/:key', authMiddleware, async (c) => {
   }
 });
 
-// Confirm upload (for COS mode, or direct pass-through for local mode)
+// Confirm upload after the browser has written the object to R2.
 uploadRouter.post('/confirm', authMiddleware, zValidator('json', confirmUploadSchema), async (c) => {
   const db = c.env.DB;
   const { key, url, type, size, mediaId, width, height, duration } = c.req.valid('json');

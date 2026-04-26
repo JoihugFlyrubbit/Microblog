@@ -1,40 +1,39 @@
 # Microblog
 
-单用户微型微博系统，面向“自己写、自己存、自己管理”的轻量使用场景。
+单用户微型微博系统，面向“自己写、自己存、自己管理”的轻量使用场景。前端是 Next.js 静态站点，API 运行在 Cloudflare Workers，数据放在 D1，图片放在 R2。
 
-当前实现基于：
-
-- `frontend`: Next.js 14
-- `api`: Hono + Cloudflare Workers
-- 数据库: Cloudflare D1
-- 媒体: Tencent COS
-- 导出: JSON / CSV / HTML / Markdown
-
-## 特性
+## Features
 
 - 单用户密码登录
 - 公开 / 私密动态
 - 标签、日期筛选、置顶
-- 图片上传
+- 图片上传、裁剪、预览
 - 补充内容
-- 导出为 `JSON`、`CSV`、`HTML`、`Markdown`
+- JSON / CSV / HTML / Markdown 导出
+- Obsidian 增量同步脚本
 - 移动端适配与 PWA 基础能力
 
-## 项目结构
+## Stack
+
+- `frontend`: Next.js 14 static export
+- `api`: Hono + Cloudflare Workers
+- `DB`: Cloudflare D1
+- `Media`: Cloudflare R2
+- `Sync`: Node.js + Wrangler
+
+## Project Structure
 
 ```text
 microblog/
-├── api/          # Hono Workers API
-├── frontend/     # Next.js 前端
-├── docs/         # 文档
-├── active/       # 当前 run 文档
-├── archive/      # 历史 run 记录
-└── decisions/    # ADR / 决策记录
+├── api/                    # Workers API
+├── frontend/               # Next.js frontend
+├── scripts/obsidian-sync/  # Obsidian sync scripts
+└── shared/                 # shared notes/types when needed
 ```
 
-## 本地开发
+## Local Development
 
-### 1. API
+### API
 
 ```bash
 cd api
@@ -43,7 +42,7 @@ npm install
 npm run dev -- --ip 0.0.0.0 --port 8787
 ```
 
-### 2. Frontend
+### Frontend
 
 ```bash
 cd frontend
@@ -52,56 +51,95 @@ npm install
 npm run dev -- --hostname 0.0.0.0 --port 3000
 ```
 
-### 3. 访问
+Open `http://localhost:3000`. A phone on the same LAN can open `http://<your-lan-ip>:3000`.
 
-- 桌面端：`http://localhost:3000`
-- 同局域网手机：`http://<你的局域网 IP>:3000`
+## Cloudflare Setup
 
-## 部署概览
+1. Create a D1 database:
 
-生产部署建议拆成两部分：
+```bash
+cd api
+npx wrangler d1 create microblog-db
+```
 
-1. `api` 部署到 Cloudflare Workers
-2. `frontend` 部署为静态站点
+2. Create an R2 bucket:
 
-完整步骤看：
+```bash
+npx wrangler r2 bucket create microblog-media
+```
 
-- [docs/friend-deployment-guide.md](./docs/friend-deployment-guide.md)
-- [docs/open-source-release-checklist.md](./docs/open-source-release-checklist.md)
+3. Update `api/wrangler.toml` with your D1 database name/id and R2 bucket name.
 
-## 适合谁
+4. Set API secrets:
 
-这个项目更适合：
+```bash
+npx wrangler secret put SESSION_SECRET
+npx wrangler secret put QWEATHER_PRIVATE_KEY
+npx wrangler secret put QWEATHER_KEY_ID
+npx wrangler secret put QWEATHER_PROJECT_ID
+```
 
-- 想自己搭一个单用户微博 / 随手记系统的人
-- 愿意自己准备 Cloudflare / COS 配置的人
-- 想把内容继续导入 Obsidian 做知识管理的人
+Weather secrets are optional. Without them, weather/AQI fields return fallback values.
 
-它目前**不是**“注册即用”的 SaaS，也不是“零配置傻瓜部署”模板。
+5. Initialize the database schema:
 
-## Obsidian
+```bash
+npx wrangler d1 execute microblog-db --remote --file src/db/schema.sql
+```
 
-当前已支持导出 `Markdown`，可作为导入 Obsidian 的基础格式。  
-如果需要“发一条就自动写进 Obsidian vault”，还需要额外的本地同步脚本或桌面端同步器。
+6. Deploy the API:
 
-方案草案见：[docs/obsidian-sync-plan.md](./docs/obsidian-sync-plan.md)。
+```bash
+npm run deploy -- --env production
+```
 
-## 开源说明
+7. Deploy the frontend to Cloudflare Pages with:
 
-本项目采用 [MIT License](./LICENSE)。
+```text
+Build command: npm run build
+Build output: out
+Root directory: frontend
+Environment variable: NEXT_PUBLIC_API_URL=https://your-api.your-subdomain.workers.dev
+```
 
-如果你准备公开发布，先执行一遍：
+## Obsidian Sync
 
-- [docs/open-source-release-checklist.md](./docs/open-source-release-checklist.md)
+Copy the example config and fill in local paths/secrets:
 
-## 当前已知限制
+```bash
+cd scripts/obsidian-sync
+cp sync.config.example.json sync.config.json
+```
 
-- 视频上传依赖 COS，未配置时不可用
-- iOS Safari / 主屏幕模式下，弹窗与系统 UI 的边界仍需继续收口
-- 自动同步 Obsidian 还未实现
+API export mode:
 
-## 相关文档
+```bash
+node sync.js --watch
+```
 
-- [docs/local-deployment.md](./docs/local-deployment.md)
-- [docs/friend-deployment-guide.md](./docs/friend-deployment-guide.md)
-- [docs/open-source-release-checklist.md](./docs/open-source-release-checklist.md)
+Remote D1/R2 mode, useful when local Node cannot reliably reach `*.workers.dev`:
+
+```bash
+node sync-remote-d1.js --watch
+```
+
+`sync.config.json` is ignored by git because it contains local paths and the admin password.
+
+## Public Release Notes
+
+Before making your fork public:
+
+- Keep `.dev.vars`, `.env.local`, `sync.config.json`, database backups, and local Wrangler state out of git.
+- Replace `api/wrangler.toml` placeholder resource IDs with your own values only in your deployment branch or private local copy.
+- Rotate secrets if any real secret was ever committed.
+- Review `LICENSE` and package metadata.
+
+## Known Limits
+
+- Video upload is still disabled until the R2 Range read path is fully validated for production.
+- This is a self-hosted single-user app, not a multi-user SaaS template.
+- The Obsidian watcher is a local process; on macOS, keep it running with LaunchAgent or another supervisor.
+
+## License
+
+[MIT](./LICENSE)

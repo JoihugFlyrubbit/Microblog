@@ -4,5 +4,7 @@
   "outputDir": "Microblog",
   "includePrivate": true,
   "intervalSeconds": 60,
+  "remoteDatabase": "your-production-d1-database",
+  "remoteBucket": "your-production-r2-bucket",
   "password": "REPLACE_WITH_ADMIN_PASSWORD"
 }

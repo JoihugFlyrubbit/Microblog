@@ -31,6 +31,12 @@ function parseRange(rangeHeader: string | undefined, size: number): { offset: nu
   };
 }
 
+function mediaCacheControl(visibility: string | null): string {
+  return visibility === 'public'
+    ? 'public, max-age=31536000, immutable'
+    : 'private, max-age=3600';
+}
+
 // GET /media/:id?v=<version>
 //
 // 返回媒体二进制流。视图侧请求 URL：`/media/<id>?v=<post.updated_at>`。
@@ -112,7 +118,7 @@ mediaRouter.get('/:id', optionalAuthMiddleware, async (c) => {
       headers: {
         'Content-Type': mime,
         'Content-Length': String(binary.byteLength),
-        'Cache-Control': 'no-store',
+        'Cache-Control': mediaCacheControl(row.visibility),
         ETag: `"${row.id}-base64"`,
       },
     });
@@ -127,7 +133,7 @@ mediaRouter.get('/:id', optionalAuthMiddleware, async (c) => {
         status: 416,
         headers: {
           'Content-Range': `bytes */${row.size}`,
-          'Cache-Control': 'no-store',
+          'Cache-Control': mediaCacheControl(row.visibility),
         },
       });
     }
@@ -147,7 +153,7 @@ mediaRouter.get('/:id', optionalAuthMiddleware, async (c) => {
     object.writeHttpMetadata(headers);
     headers.set('Content-Type', headers.get('Content-Type') || (row.type === 'image' ? 'image/jpeg' : 'application/octet-stream'));
     headers.set('Accept-Ranges', 'bytes');
-    headers.set('Cache-Control', 'no-store');
+    headers.set('Cache-Control', mediaCacheControl(row.visibility));
     headers.set('ETag', `"${row.id}-${row.updated_at || 'orphan'}-${object.etag}"`);
 
     if (range) {

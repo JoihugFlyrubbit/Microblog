@@ -7,8 +7,6 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
-const DB_NAME = process.env.MICROBLOG_D1_DATABASE || 'microblog-db';
-const R2_BUCKET = process.env.MICROBLOG_R2_BUCKET || 'microblog-media';
 const RENDER_FORMAT_VERSION = 5;
 
 function parseArgs(argv) {
@@ -22,7 +20,15 @@ function loadConfig(configPath) {
   const config = JSON.parse(fs.readFileSync(path.resolve(configPath), 'utf8'));
   config.includePrivate = config.includePrivate !== false;
   config.intervalSeconds = Number(config.intervalSeconds) > 0 ? Number(config.intervalSeconds) : 60;
+  config.remoteDatabase = process.env.MICROBLOG_D1_DATABASE || config.remoteDatabase || 'microblog-db';
+  config.remoteBucket = process.env.MICROBLOG_R2_BUCKET || config.remoteBucket || 'microblog-media';
   return config;
+}
+
+function requireRemoteConfig(config) {
+  if (!config.remoteDatabase || !config.remoteBucket) {
+    throw new Error('remoteDatabase and remoteBucket are required in sync config, or set MICROBLOG_D1_DATABASE and MICROBLOG_R2_BUCKET');
+  }
 }
 
 function runWrangler(args) {
@@ -36,8 +42,8 @@ function runWrangler(args) {
   return result.stdout;
 }
 
-function d1(sql) {
-  const out = runWrangler(['d1', 'execute', DB_NAME, '--remote', '--json', '--command', sql]);
+function d1(config, sql) {
+  const out = runWrangler(['d1', 'execute', config.remoteDatabase, '--remote', '--json', '--command', sql]);
   const jsonStart = out.indexOf('[');
   if (jsonStart === -1) {
     throw new Error(`wrangler D1 returned non-JSON output: ${out.slice(0, 200)}`);
@@ -126,14 +132,14 @@ function fingerprint(post, appends, media, tags) {
   return crypto.createHash('sha1').update(payload).digest('hex');
 }
 
-function ensureAttachment(media, attachmentsDir) {
+function ensureAttachment(config, media, attachmentsDir) {
   const filename = attachmentFilename(media);
   const target = path.join(attachmentsDir, filename);
   if (fs.existsSync(target)) return filename;
 
   if (media.url?.startsWith('r2://')) {
     const key = media.url.slice('r2://'.length);
-    runWrangler(['r2', 'object', 'get', `${R2_BUCKET}/${key}`, '--remote', '--file', target]);
+    runWrangler(['r2', 'object', 'get', `${config.remoteBucket}/${key}`, '--remote', '--file', target]);
     return filename;
   }
 
@@ -196,13 +202,14 @@ function groupBy(rows, key) {
 }
 
 async function runOnce(config) {
+  requireRemoteConfig(config);
   const visibility = config.includePrivate ? '' : "WHERE visibility = 'public'";
-  const posts = d1(`SELECT * FROM posts ${visibility} ORDER BY created_at DESC`);
+  const posts = d1(config, `SELECT * FROM posts ${visibility} ORDER BY created_at DESC`);
   const postIds = posts.map((post) => post.id);
   const idList = postIds.length > 0 ? postIds.join(',') : 'NULL';
-  const appends = d1(`SELECT * FROM appends WHERE post_id IN (${idList}) ORDER BY created_at`);
-  const media = d1(`SELECT * FROM media WHERE post_id IN (${idList}) ORDER BY created_at`);
-  const postTags = d1(`
+  const appends = d1(config, `SELECT * FROM appends WHERE post_id IN (${idList}) ORDER BY created_at`);
+  const media = d1(config, `SELECT * FROM media WHERE post_id IN (${idList}) ORDER BY created_at`);
+  const postTags = d1(config, `
     SELECT pt.post_id, t.name
     FROM post_tags pt
     JOIN tags t ON t.id = pt.tag_id
@@ -257,7 +264,7 @@ async function runOnce(config) {
     for (const item of postMedia) {
       try {
         const before = fs.existsSync(path.join(attachmentsDir, attachmentFilename(item)));
-        const local = ensureAttachment(item, attachmentsDir);
+        const local = ensureAttachment(config, item, attachmentsDir);
         attachmentMap.set(item.id, local);
         if (!before) imagesDownloaded++;
       } catch (error) {

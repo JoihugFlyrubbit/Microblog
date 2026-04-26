@@ -13,10 +13,6 @@ export interface Env {
   MEDIA_BUCKET: R2Bucket;
   SESSION_SECRET: string;
   ALLOW_ADMIN_BOOTSTRAP?: string;
-  COS_SECRET_ID: string;
-  COS_SECRET_KEY: string;
-  COS_BUCKET: string;
-  COS_REGION: string;
   QWEATHER_PRIVATE_KEY?: string;
   QWEATHER_KEY_ID?: string;
   QWEATHER_PROJECT_ID?: string;

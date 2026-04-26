@@ -28,6 +28,10 @@ yarn-error.log*
 
 # database backups (contain data, not code)
 **/backups/*.sql
+api/backups/
+
+# local sync config
+scripts/obsidian-sync/sync.config.json
 
 # local docs and screenshots
 **/.obsidian/

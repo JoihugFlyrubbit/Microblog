@@ -6,8 +6,6 @@ compatibility_date = "2026-04-12"
 [vars]
 ENVIRONMENT = "development"
 ALLOW_ADMIN_BOOTSTRAP = "true"
-COS_BUCKET = "your-bucket"
-COS_REGION = "ap-beijing"
 
 # D1 Database binding (local development)
 [[d1_databases]]
@@ -17,21 +15,23 @@ database_id = "local"
 
 [[r2_buckets]]
 binding = "MEDIA_BUCKET"
-bucket_name = "microblog-media"
+bucket_name = "your-local-r2-bucket"
 
 [env.production]
 vars = { ENVIRONMENT = "production", ALLOW_ADMIN_BOOTSTRAP = "false" }
 
 [[env.production.d1_databases]]
 binding = "DB"
-database_name = "microblog-db"
+database_name = "your-production-d1-database"
 database_id = "your-production-d1-database-id"
 
 [[env.production.r2_buckets]]
 binding = "MEDIA_BUCKET"
-bucket_name = "microblog-media"
+bucket_name = "your-production-r2-bucket"
 
-# Secrets (set via wrangler secret put):
+# Required secrets (set via wrangler secret put):
 # - SESSION_SECRET
-# - COS_SECRET_ID
-# - COS_SECRET_KEY
+# Optional weather secrets:
+# - QWEATHER_PRIVATE_KEY
+# - QWEATHER_KEY_ID
+# - QWEATHER_PROJECT_ID
