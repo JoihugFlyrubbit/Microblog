@@ -1,11 +1,16 @@
 // API client for calling Workers API
 export function getApiBase() {
+  const configuredApiBase = process.env.NEXT_PUBLIC_API_URL;
+  if (configuredApiBase) {
+    return configuredApiBase.replace(/\/$/, '');
+  }
+
   if (typeof window !== 'undefined') {
     const { hostname, protocol } = window.location;
     return `${protocol}//${hostname}:8787`;
   }
 
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787';
+  return 'http://localhost:8787';
 }
 
 export interface ApiResponse<T> {

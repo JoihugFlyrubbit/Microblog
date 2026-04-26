@@ -25,7 +25,7 @@ vars = { ENVIRONMENT = "production", ALLOW_ADMIN_BOOTSTRAP = "false" }
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "microblog-db"
-database_id = "your-database-id-here"
+database_id = "your-production-d1-database-id"
 
 [[env.production.r2_buckets]]
 binding = "MEDIA_BUCKET"

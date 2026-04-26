@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8787";
+import { getApiBase } from "@/lib/api";
 
 type EnvironmentResponse = {
   success: boolean;
@@ -35,7 +35,7 @@ export function EnvironmentCard() {
     const load = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`${API_BASE}/environment/live`);
+        const response = await fetch(`${getApiBase()}/environment/live`);
         const result = await response.json() as EnvironmentResponse;
         if (!cancelled && result.success && result.data) {
           setData(result.data);
