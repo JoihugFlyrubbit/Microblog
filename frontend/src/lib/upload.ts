@@ -1,6 +1,6 @@
 "use client";
 
-import { Media, uploadApi } from "@/lib/api";
+import { Media, toApiUrl, uploadApi } from "@/lib/api";
 
 export const getFileType = (file: File): "image" | "video" => {
   return file.type.startsWith("video/") ? "video" : "image";
@@ -152,7 +152,7 @@ export async function uploadFileToMedia(inputFile: File, options: UploadOptions 
     id: confirmRes.data.mediaId,
     post_id: 0,
     type,
-    url: confirmRes.data.url,
+    url: toApiUrl(confirmRes.data.url),
     size: file.size,
     width: dimensions.width || undefined,
     height: dimensions.height || undefined,

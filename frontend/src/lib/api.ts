@@ -13,6 +13,14 @@ export function getApiBase() {
   return 'http://localhost:8787';
 }
 
+export function toApiUrl(url: string) {
+  if (url.startsWith('/')) {
+    return `${getApiBase()}${url}`;
+  }
+
+  return url;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
@@ -180,6 +188,16 @@ export interface PostsListResponse {
   pagination: Pagination;
 }
 
+function normalizePostWithRelations(post: PostWithRelations): PostWithRelations {
+  return {
+    ...post,
+    media: post.media.map((item) => ({
+      ...item,
+      url: toApiUrl(item.url),
+    })),
+  };
+}
+
 export const postsApi = {
   list: (params?: { page?: number; date?: string; tag?: string; visibility?: 'all' | 'public' | 'private'; pinned?: boolean }) => {
     const query = new URLSearchParams();
@@ -191,8 +209,18 @@ export const postsApi = {
     return apiClient<PostsListResponse>(`/posts?${query}`);
   },
 
-  get: (id: number) =>
-    apiClient<{ post: PostWithRelations }>(`/posts/${id}`),
+  get: async (id: number) => {
+    const res = await apiClient<{ post: PostWithRelations }>(`/posts/${id}`);
+    if (res.success && res.data) {
+      return {
+        ...res,
+        data: {
+          post: normalizePostWithRelations(res.data.post),
+        },
+      };
+    }
+    return res;
+  },
 
   create: (data: { content: string; visibility?: 'public' | 'private'; tagNames?: string[]; mediaIds?: string[] }) =>
     apiClient<{ post: Post }>('/posts', {
@@ -296,8 +324,18 @@ export const exportApi = {
       body: JSON.stringify(data),
     }),
 
-  exportPost: (id: number) =>
-    apiClient<{ post: PostWithRelations }>(`/export/post/${id}`),
+  exportPost: async (id: number) => {
+    const res = await apiClient<{ post: PostWithRelations }>(`/export/post/${id}`);
+    if (res.success && res.data) {
+      return {
+        ...res,
+        data: {
+          post: normalizePostWithRelations(res.data.post),
+        },
+      };
+    }
+    return res;
+  },
 };
 
 // Tags API
