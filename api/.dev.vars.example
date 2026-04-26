@@ -1,6 +1,12 @@
 # Copy to .dev.vars for local development
 SESSION_SECRET=your-session-secret-min-32-characters-long
 ALLOW_ADMIN_BOOTSTRAP=true
+ALLOWED_ORIGINS=http://localhost:3000
+SESSION_SAME_SITE=lax
+ENV_LOCATION_LABEL=Your Location
+ENV_LATITUDE=0
+ENV_LONGITUDE=0
+ENV_TIMEZONE=Asia/Shanghai
 QWEATHER_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n<your-qweather-private-key>\n-----END PRIVATE KEY-----"
 QWEATHER_KEY_ID=your-qweather-key-id
 QWEATHER_PROJECT_ID=your-qweather-project-id

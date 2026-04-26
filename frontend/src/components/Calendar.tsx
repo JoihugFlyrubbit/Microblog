@@ -50,11 +50,11 @@ export function Calendar({ onDateSelect, selectedDate, includePrivate = false, r
     } finally {
       setLoading(false);
     }
-  }, [includePrivate, year, month, refreshKey]);
+  }, [includePrivate, year, month]);
 
   useEffect(() => {
     loadDates();
-  }, [loadDates]);
+  }, [loadDates, refreshKey]);
 
   const getDaysInMonth = (year: number, month: number) => {
     return new Date(year, month + 1, 0).getDate();

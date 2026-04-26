@@ -3,7 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { Env } from '../types';
-import { enqueueR2Deletion, sweepR2DeletionQueue, sweepStalePendingR2Uploads } from '../lib/media-deletion';
+import { enqueueR2Deletion, sweepConfirmedOrphanR2Media, sweepR2DeletionQueue, sweepStalePendingR2Uploads } from '../lib/media-deletion';
 
 export const uploadRouter = new Hono<{ Bindings: Env }>();
 
@@ -386,9 +386,10 @@ uploadRouter.post('/sweep-deletions', authMiddleware, async (c) => {
       sweepR2DeletionQueue(c.env),
       sweepStalePendingR2Uploads(c.env),
     ]);
+    const confirmedOrphanMedia = await sweepConfirmedOrphanR2Media(c.env);
     return c.json({
       success: true,
-      data: { deletionQueue, stalePendingUploads },
+      data: { deletionQueue, stalePendingUploads, confirmedOrphanMedia },
     });
   } catch (error) {
     console.error('Sweep R2 deletion queue error:', error);

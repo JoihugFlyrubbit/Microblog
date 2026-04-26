@@ -34,11 +34,11 @@ export function TagCloud({ onTagSelect, selectedTag, includePrivate = false, ref
     } finally {
       setLoading(false);
     }
-  }, [includePrivate, refreshKey]);
+  }, [includePrivate]);
 
   useEffect(() => {
     loadTags();
-  }, [loadTags]);
+  }, [loadTags, refreshKey]);
 
   if (loading) {
     return (

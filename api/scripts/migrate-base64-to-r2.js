@@ -11,13 +11,17 @@ const isLocal = args.has('--local') || !isRemote;
 const dryRun = args.has('--dry-run') || (!args.has('--execute') && !args.has('--rollback'));
 const execute = args.has('--execute');
 const rollback = args.has('--rollback');
-const database = process.env.MICROBLOG_D1_DATABASE || 'microblog-db-local';
-const bucket = process.env.MICROBLOG_R2_BUCKET || 'microblog-media';
+const database = process.env.MICROBLOG_D1_DATABASE;
+const bucket = process.env.MICROBLOG_R2_BUCKET;
 const modeFlag = isRemote ? '--remote' : '--local';
 const legacyBackupRef = `api/backups/media-legacy-before-r2-${Date.now()}.json`;
 
 if (execute && rollback) {
   throw new Error('Use only one of --execute or --rollback');
+}
+
+if (!database || !bucket) {
+  throw new Error('Set MICROBLOG_D1_DATABASE and MICROBLOG_R2_BUCKET before running media migration');
 }
 
 function runWrangler(parts, options = {}) {

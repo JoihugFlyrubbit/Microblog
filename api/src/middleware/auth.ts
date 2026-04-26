@@ -2,12 +2,16 @@ import { MiddlewareHandler } from 'hono';
 import { getIronSession, SessionOptions } from 'iron-session';
 import { Env, SessionData } from '../types';
 
-const getSessionOptions = (secret: string): SessionOptions => ({
-  password: secret,
+function sessionSameSite(env: Env): 'lax' | 'strict' | 'none' {
+  return env.SESSION_SAME_SITE || (env.ENVIRONMENT === 'production' ? 'none' : 'lax');
+}
+
+export const getSessionOptions = (env: Env): SessionOptions => ({
+  password: env.SESSION_SECRET,
   cookieName: 'microblog_session',
   cookieOptions: {
-    secure: true,
-    sameSite: 'lax'
+    secure: env.ENVIRONMENT === 'production',
+    sameSite: sessionSameSite(env),
     httpOnly: true,
     maxAge: 60 * 60 * 24 * 7, // 7 days
   },
@@ -21,7 +25,7 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Env }> = async (c, ne
   const session = await getIronSession<SessionData>(
     c.req.raw,
     c.res,
-    getSessionOptions(c.env.SESSION_SECRET)
+    getSessionOptions(c.env)
   );
 
   if (!session.isLoggedIn) {
@@ -49,7 +53,7 @@ export const optionalAuthMiddleware: MiddlewareHandler<{ Bindings: Env }> = asyn
   const session = await getIronSession<SessionData>(
     c.req.raw,
     c.res,
-    getSessionOptions(c.env.SESSION_SECRET)
+    getSessionOptions(c.env)
   );
 
   if (session.isLoggedIn) {

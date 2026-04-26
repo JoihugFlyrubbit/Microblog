@@ -4,8 +4,13 @@
 # local env and secrets
 **/.env.local
 **/.env.*.local
+**/.env.*
 **/.dev.vars
+**/.dev.vars.*
 **/.env
+!**/.env.example
+!**/.env*.example
+!**/.dev.vars.example
 
 # dependencies
 **/node_modules/

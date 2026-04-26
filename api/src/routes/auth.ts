@@ -2,9 +2,9 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import { getIronSession, SessionOptions } from 'iron-session';
+import { getIronSession } from 'iron-session';
 import { Env, SessionData } from '../types';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, getSessionOptions } from '../middleware/auth';
 
 const loginSchema = z.object({
   password: z.string().min(1),
@@ -17,24 +17,64 @@ const changePasswordSchema = z.object({
 
 const isAdminBootstrapAllowed = (env: Env) => env.ALLOW_ADMIN_BOOTSTRAP === 'true';
 
-// Session options
-const getSessionOptions = (env: Env): SessionOptions => ({
-  password: env.SESSION_SECRET,
-  cookieName: 'microblog_session',
-  cookieOptions: {
-    secure: env.ENVIRONMENT === 'production',
-    sameSite: 'lax',
-    httpOnly: true,
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-  },
-});
-
 export const authRouter = new Hono<{ Bindings: Env }>();
+
+function clientKey(c: { req: { header: (name: string) => string | undefined } }) {
+  const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  const ua = c.req.header('user-agent') || '';
+  return { ip, ua };
+}
+
+async function ensureLoginLogs(db: D1Database) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS login_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ip TEXT NOT NULL,
+      user_agent TEXT,
+      success BOOLEAN DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_login_logs_created_at ON login_logs(created_at)').run();
+}
+
+async function isLoginRateLimited(db: D1Database, ip: string) {
+  await ensureLoginLogs(db);
+  const local = await db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM login_logs
+    WHERE ip = ?
+      AND success = 0
+      AND created_at > datetime('now', '-15 minutes')
+  `).bind(ip).first<{ count: number }>();
+  const global = await db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM login_logs
+    WHERE success = 0
+      AND created_at > datetime('now', '-15 minutes')
+  `).first<{ count: number }>();
+  return Number(local?.count || 0) >= 8 || Number(global?.count || 0) >= 100;
+}
+
+async function logLoginAttempt(db: D1Database, ip: string, userAgent: string, success: boolean) {
+  await ensureLoginLogs(db);
+  await db.prepare(
+    'INSERT INTO login_logs (ip, user_agent, success) VALUES (?, ?, ?)'
+  ).bind(ip, userAgent, success ? 1 : 0).run();
+}
 
 // Login
 authRouter.post('/login', zValidator('json', loginSchema), async (c) => {
   const { password } = c.req.valid('json');
   const db = c.env.DB;
+  const client = clientKey(c);
+
+  if (await isLoginRateLimited(db, client.ip)) {
+    return c.json({
+      success: false,
+      error: { code: 'RATE_LIMITED', message: 'Too many login attempts. Try again later.' },
+    }, 429, { 'Retry-After': '900' });
+  }
 
   // Get user (single user system)
   let user = await db.prepare(
@@ -60,13 +100,7 @@ authRouter.post('/login', zValidator('json', loginSchema), async (c) => {
     ).bind('admin', passwordHash, '管理员', '', '', '', '', '').first() as { id: number; username: string; nickname: string; avatar_url: string };
 
     // Log the auto-creation
-    await db.prepare(
-      'INSERT INTO login_logs (ip, user_agent, success) VALUES (?, ?, ?)'
-    ).bind(
-      c.req.header('cf-connecting-ip') || 'unknown',
-      c.req.header('user-agent') || '',
-      1
-    ).run();
+    await logLoginAttempt(db, client.ip, client.ua, true);
 
     // Create session for the new user
     const session = await getIronSession<SessionData>(
@@ -97,13 +131,7 @@ authRouter.post('/login', zValidator('json', loginSchema), async (c) => {
   const valid = await bcrypt.compare(password, user.password_hash);
 
   // Log attempt
-  await db.prepare(
-    'INSERT INTO login_logs (ip, user_agent, success) VALUES (?, ?, ?)'
-  ).bind(
-    c.req.header('cf-connecting-ip') || 'unknown',
-    c.req.header('user-agent') || '',
-    valid ? 1 : 0
-  ).run();
+  await logLoginAttempt(db, client.ip, client.ua, valid);
 
   if (!valid) {
     return c.json({

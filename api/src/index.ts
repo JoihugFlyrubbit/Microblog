@@ -15,28 +15,57 @@ import { mediaRouter } from './routes/media';
 
 const app = new Hono<{ Bindings: Env }>();
 
+function parseAllowedOrigins(env: Env) {
+  const configured = (env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const origins = new Set(configured);
+  if (env.ENVIRONMENT !== 'production') {
+    origins.add('http://localhost:3000');
+    origins.add('http://127.0.0.1:3000');
+  }
+  return origins;
+}
+
+function normalizeOrigin(origin: string | undefined) {
+  if (!origin) return '';
+  try {
+    return new URL(origin).origin;
+  } catch {
+    return '';
+  }
+}
+
 // Middleware
 app.use(logger());
 app.use('/*', cors({
-  origin: (origin) => {
-    // Allow localhost for development
-    if (false) {
-      return origin;
-    }
-    // Allow local network access for phone testing
-    if (/^https?:\/\/(192\.0\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(origin || '')) {
-      return origin as string;
-    }
-    // Allow production domain
-    if (false) {
-      return origin;
-    }
-    return '';
+  origin: (origin, c) => {
+    const normalized = normalizeOrigin(origin);
+    return parseAllowedOrigins(c.env).has(normalized) ? normalized : '';
   },
   credentials: true,
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
+app.use('/*', async (c, next) => {
+  const method = c.req.method.toUpperCase();
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    await next();
+    return;
+  }
+
+  const origin = normalizeOrigin(c.req.header('Origin'));
+  if (origin && !parseAllowedOrigins(c.env).has(origin)) {
+    return c.json({
+      success: false,
+      error: { code: 'INVALID_ORIGIN', message: 'Origin is not allowed' },
+    }, 403);
+  }
+
+  await next();
+});
 
 // Health check
 app.get('/health', (c) => {

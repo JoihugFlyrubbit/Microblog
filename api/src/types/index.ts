@@ -13,6 +13,12 @@ export interface Env {
   MEDIA_BUCKET: R2Bucket;
   SESSION_SECRET: string;
   ALLOW_ADMIN_BOOTSTRAP?: string;
+  ALLOWED_ORIGINS?: string;
+  SESSION_SAME_SITE?: 'lax' | 'strict' | 'none';
+  ENV_LOCATION_LABEL?: string;
+  ENV_LATITUDE?: string;
+  ENV_LONGITUDE?: string;
+  ENV_TIMEZONE?: string;
   QWEATHER_PRIVATE_KEY?: string;
   QWEATHER_KEY_ID?: string;
   QWEATHER_PROJECT_ID?: string;

@@ -3,10 +3,22 @@ import { Env } from '../types';
 
 export const environmentRouter = new Hono<{ Bindings: Env }>();
 
-const LAT = 0;
-const LON = 0;
-const QWEATHER_LOCATION = '0,0';
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
+const DEFAULT_TIMEZONE = 'Asia/Shanghai';
+
+function getLocation(env: Env) {
+  const latitude = Number(env.ENV_LATITUDE);
+  const longitude = Number(env.ENV_LONGITUDE);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+  return {
+    label: env.ENV_LOCATION_LABEL || 'Configured location',
+    latitude,
+    longitude,
+    timezone: env.ENV_TIMEZONE || DEFAULT_TIMEZONE,
+  };
+}
 
 function toBase64Url(input: string | ArrayBuffer): string {
   const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : new Uint8Array(input);
@@ -75,10 +87,16 @@ async function createQWeatherToken(env: Env): Promise<string> {
 }
 
 async function fetchQWeatherAqi(env: Env) {
+  const location = getLocation(env);
+  if (!location) {
+    throw new Error('Environment location is not configured');
+  }
+  if (!env.QWEATHER_API_HOST) {
+    throw new Error('QWeather API host is not configured');
+  }
   const token = await createQWeatherToken(env);
-  const host = env.QWEATHER_API_HOST || 'your-qweather-api-host';
   const response = await fetch(
-    `https://${host}/airquality/v1/current/${LAT.toFixed(2)}/${LON.toFixed(2)}`,
+    `https://${env.QWEATHER_API_HOST}/airquality/v1/current/${location.latitude.toFixed(2)}/${location.longitude.toFixed(2)}`,
     {
       headers: { Authorization: `Bearer ${token}` },
     }
@@ -109,12 +127,16 @@ async function fetchQWeatherAqi(env: Env) {
   };
 }
 
-async function fetchUv() {
+async function fetchUv(env: Env) {
+  const location = getLocation(env);
+  if (!location) {
+    throw new Error('Environment location is not configured');
+  }
   const url = new URL(OPEN_METEO_URL);
-  url.searchParams.set('latitude', String(LAT));
-  url.searchParams.set('longitude', String(LON));
+  url.searchParams.set('latitude', String(location.latitude));
+  url.searchParams.set('longitude', String(location.longitude));
   url.searchParams.set('hourly', 'uv_index');
-  url.searchParams.set('timezone', 'Asia/Shanghai');
+  url.searchParams.set('timezone', location.timezone);
   url.searchParams.set('forecast_days', '1');
 
   const response = await fetch(url.toString());
@@ -142,7 +164,7 @@ async function fetchUv() {
     throw new Error('Open-Meteo daytime UV data missing');
   }
   const nowHour = Number(new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Shanghai',
+    timeZone: location.timezone,
     hour: '2-digit',
     hour12: false,
   }).format(new Date()));
@@ -169,13 +191,14 @@ async function fetchUv() {
 }
 
 environmentRouter.get('/live', async (c) => {
+  const location = getLocation(c.env);
   const result = {
-    location: {
-      label: '北京昌平',
-      latitude: LAT,
-      longitude: LON,
-      qweatherLocation: QWEATHER_LOCATION,
-    },
+    location: location ? {
+      label: location.label,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      qweatherLocation: `${location.longitude.toFixed(2)},${location.latitude.toFixed(2)}`,
+    } : null,
     updatedAt: new Date().toISOString(),
     aqi: {
       value: null as number | null,
@@ -198,7 +221,7 @@ environmentRouter.get('/live', async (c) => {
   }
 
   try {
-    const uv = await fetchUv();
+    const uv = await fetchUv(c.env);
     result.uv = { ...uv, status: 'ok' };
   } catch (error) {
     console.error('Environment UV fetch failed:', error);

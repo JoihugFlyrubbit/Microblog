@@ -378,6 +378,11 @@ postsRouter.put('/:id', authMiddleware, zValidator('json', updatePostSchema), as
         error: { code: 'INVALID_MEDIA_STATE', message: '媒体未完成上传或已被其他动态使用' },
       }, 400);
     }
+    const oldMedia = await db.prepare(
+      'SELECT id, url FROM media WHERE post_id = ?'
+    ).bind(id).all<{ id: number; url: string }>();
+    const requestedMediaIds = new Set(mediaIds.map((mediaId) => Number(mediaId)));
+    const removedMedia = oldMedia.results.filter((media) => !requestedMediaIds.has(media.id));
 
     // Update post
     await db.prepare(
@@ -406,7 +411,14 @@ postsRouter.put('/:id', authMiddleware, zValidator('json', updatePostSchema), as
       }
     }
 
-    // Update media associations (detach old, reattach new). R2 cleanup is queued separately.
+    for (const media of removedMedia) {
+      await enqueueR2Deletion(db, media.url);
+      await db.prepare(
+        'DELETE FROM media WHERE id = ? AND post_id = ?'
+      ).bind(media.id, id).run();
+    }
+
+    // Update media associations. Removed media rows were deleted and queued above.
     await db.prepare('UPDATE media SET post_id = NULL WHERE post_id = ?').bind(id).run();
     if (mediaIds.length > 0) {
       for (const mediaId of Array.from(new Set(mediaIds))) {

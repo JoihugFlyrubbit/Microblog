@@ -10,7 +10,7 @@ type EnvironmentResponse = {
   data?: {
     location: {
       label: string;
-    };
+    } | null;
     updatedAt: string;
     aqi: {
       value: number | null;
@@ -65,7 +65,7 @@ export function EnvironmentCard() {
       <div className="mb-4 flex items-end justify-between gap-3">
         <div>
           <h3 className="text-center text-[1.15rem] font-semibold text-[#1f2430]">空气与紫外线</h3>
-          <p className="mt-1 text-xs text-soft">{data?.location.label || "北京昌平"}</p>
+          <p className="mt-1 text-xs text-soft">{data?.location?.label || "未配置位置"}</p>
         </div>
         <span className="text-xs text-soft">更新于 {updatedAt}</span>
       </div>

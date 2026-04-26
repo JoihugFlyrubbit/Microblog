@@ -70,7 +70,21 @@ npx wrangler r2 bucket create microblog-media
 
 3. Update `api/wrangler.toml` with your D1 database name/id and R2 bucket name.
 
-4. Set API secrets:
+4. Configure API variables:
+
+```text
+ALLOWED_ORIGINS=https://your-pages-site.pages.dev
+SESSION_SAME_SITE=none
+ENV_LOCATION_LABEL=Your Location
+ENV_LATITUDE=0
+ENV_LONGITUDE=0
+ENV_TIMEZONE=Asia/Shanghai
+QWEATHER_API_HOST=your-qweather-api-host
+```
+
+`ALLOWED_ORIGINS` is an exact comma-separated allowlist for credentialed browser requests. Do not use broad wildcard domains for production.
+
+5. Set API secrets:
 
 ```bash
 npx wrangler secret put SESSION_SECRET
@@ -79,27 +93,28 @@ npx wrangler secret put QWEATHER_KEY_ID
 npx wrangler secret put QWEATHER_PROJECT_ID
 ```
 
-Weather secrets are optional. Without them, weather/AQI fields return fallback values.
+Weather and location variables are optional. Without them, weather/AQI/UV fields return unavailable values.
 
-5. Initialize the database schema:
+6. Initialize the database schema:
 
 ```bash
 npx wrangler d1 execute microblog-db --remote --file src/db/schema.sql
 ```
 
-6. Deploy the API:
+7. Deploy the API:
 
 ```bash
 npm run deploy -- --env production
 ```
 
-7. Deploy the frontend to Cloudflare Pages with:
+8. Deploy the frontend to Cloudflare Pages with:
 
 ```text
 Build command: npm run build
 Build output: out
 Root directory: frontend
 Environment variable: NEXT_PUBLIC_API_URL=https://your-api.your-subdomain.workers.dev
+Environment variable: NEXT_PUBLIC_SITE_URL=https://your-pages-site.pages.dev
 ```
 
 ## Obsidian Sync

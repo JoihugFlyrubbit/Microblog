@@ -8,10 +8,16 @@ const { join } = require('node:path');
 const args = new Set(process.argv.slice(2));
 const execute = args.has('--execute');
 const remote = args.has('--remote');
-const database = process.env.MICROBLOG_D1_DATABASE || 'microblog-db';
-const bucket = process.env.MICROBLOG_R2_BUCKET || 'microblog-media';
-const backupPath = process.env.MICROBLOG_MEDIA_BACKUP_SQL || join(__dirname, '..', 'backups', 'codex-before-r2-20260426.sql');
+const argv = process.argv.slice(2);
+const backupArgIndex = argv.indexOf('--backup');
+const database = process.env.MICROBLOG_D1_DATABASE;
+const bucket = process.env.MICROBLOG_R2_BUCKET;
+const backupPath = process.env.MICROBLOG_MEDIA_BACKUP_SQL || (backupArgIndex >= 0 ? argv[backupArgIndex + 1] : '');
 const modeFlag = remote ? '--remote' : '--local';
+
+if (!database || !bucket || !backupPath) {
+  throw new Error('Set MICROBLOG_D1_DATABASE, MICROBLOG_R2_BUCKET, and MICROBLOG_MEDIA_BACKUP_SQL or pass --backup <sql-file>');
+}
 
 function runWrangler(parts, options = {}) {
   return execFileSync('npx', ['wrangler', ...parts], {

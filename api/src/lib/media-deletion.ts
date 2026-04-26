@@ -108,3 +108,42 @@ export async function sweepStalePendingR2Uploads(env: Env, limit = 50) {
 
   return { scanned: rows.results.length, deleted, errors };
 }
+
+export async function sweepConfirmedOrphanR2Media(env: Env, limit = 50, olderThanHours = 24) {
+  await ensureMediaDeletionQueue(env.DB);
+  const rows = await env.DB.prepare(`
+    SELECT id, url
+    FROM media
+    WHERE post_id IS NULL
+      AND url LIKE 'r2://%'
+      AND created_at < datetime('now', ?)
+    ORDER BY created_at
+    LIMIT ?
+  `).bind(`-${olderThanHours} hours`, limit).all<{ id: number; url: string }>();
+
+  let queued = 0;
+  let deletedRows = 0;
+  const errors: Array<{ id: number; key: string; message: string }> = [];
+
+  for (const row of rows.results) {
+    const key = r2KeyFromUrl(row.url);
+    if (!key) continue;
+
+    try {
+      await enqueueR2Deletion(env.DB, row.url);
+      const result = await env.DB.prepare(
+        'DELETE FROM media WHERE id = ? AND post_id IS NULL AND url = ?'
+      ).bind(row.id, row.url).run();
+      queued++;
+      if (result.meta.changes > 0) deletedRows++;
+    } catch (error) {
+      errors.push({
+        id: row.id,
+        key,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { scanned: rows.results.length, queued, deletedRows, errors };
+}

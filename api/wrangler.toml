@@ -6,6 +6,8 @@ compatibility_date = "2026-04-12"
 [vars]
 ENVIRONMENT = "development"
 ALLOW_ADMIN_BOOTSTRAP = "true"
+ALLOWED_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
+SESSION_SAME_SITE = "lax"
 
 # D1 Database binding (local development)
 [[d1_databases]]
@@ -18,7 +20,7 @@ binding = "MEDIA_BUCKET"
 bucket_name = "your-local-r2-bucket"
 
 [env.production]
-vars = { ENVIRONMENT = "production", ALLOW_ADMIN_BOOTSTRAP = "false" }
+vars = { ENVIRONMENT = "production", ALLOW_ADMIN_BOOTSTRAP = "false", ALLOWED_ORIGINS = "https://your-pages-site.pages.dev", SESSION_SAME_SITE = "none" }
 
 [[env.production.d1_databases]]
 binding = "DB"
