@@ -195,9 +195,6 @@ environmentRouter.get('/live', async (c) => {
   const result = {
     location: location ? {
       label: location.label,
-      latitude: location.latitude,
-      longitude: location.longitude,
-      qweatherLocation: `${location.longitude.toFixed(2)},${location.latitude.toFixed(2)}`,
     } : null,
     updatedAt: new Date().toISOString(),
     aqi: {
