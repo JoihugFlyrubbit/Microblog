@@ -43,6 +43,8 @@ file_content() {
   local path="$1"
   if [[ "$MODE" == "--all" ]]; then
     [[ -f "$path" ]] && cat -- "$path"
+  elif [[ "$MODE" == "--worktree" ]]; then
+    [[ -f "$path" ]] && cat -- "$path"
   else
     git show ":$path" 2>/dev/null || true
   fi
@@ -51,6 +53,8 @@ file_content() {
 is_text_file() {
   local path="$1"
   if [[ "$MODE" == "--all" ]]; then
+    [[ -f "$path" ]] && LC_ALL=C grep -Iq . "$path"
+  elif [[ "$MODE" == "--worktree" ]]; then
     [[ -f "$path" ]] && LC_ALL=C grep -Iq . "$path"
   else
     git show ":$path" 2>/dev/null | LC_ALL=C grep -Iq .
