@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Context, Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
@@ -51,6 +51,22 @@ function getExtension(filename: string, contentType: string): string {
 function generateKey(mediaId: number, filename: string, contentType: string): string {
   const random = Math.random().toString(36).substring(2, 10);
   return `media/${mediaId}-${random}.${getExtension(filename, contentType)}`;
+}
+
+function createUploadUrl(c: Context<{ Bindings: Env }>, key: string, mediaId: number, size: number, type: 'image' | 'video'): string {
+  const encodedKey = encodeURIComponent(key);
+  const forwardedHost = c.req.header('X-Forwarded-Host');
+  const forwardedProto = c.req.header('X-Forwarded-Proto') || 'https';
+
+  const uploadUrl = forwardedHost
+    ? new URL(`${forwardedProto}://${forwardedHost}/api/upload/r2/${encodedKey}`)
+    : new URL(`./r2/${encodedKey}`, c.req.url);
+
+  uploadUrl.searchParams.set('mediaId', String(mediaId));
+  uploadUrl.searchParams.set('size', String(size));
+  uploadUrl.searchParams.set('type', type);
+
+  return uploadUrl.toString();
 }
 
 // Reserve a media row and return the authenticated R2 upload URL.
@@ -115,17 +131,12 @@ uploadRouter.post('/presigned', authMiddleware, async (c) => {
       'UPDATE media SET url = ? WHERE id = ? AND url = ?'
     ).bind(`pending:r2:${key}`, reserved.id, 'pending:r2').run();
 
-    const uploadUrl = new URL(`./r2/${encodeURIComponent(key)}`, c.req.url);
-    uploadUrl.searchParams.set('mediaId', String(reserved.id));
-    uploadUrl.searchParams.set('size', String(size));
-    uploadUrl.searchParams.set('type', mediaType);
-
     return c.json({
       success: true,
       data: {
         mediaId: reserved.id,
         key,
-        url: uploadUrl.toString(),
+        url: createUploadUrl(c, key, reserved.id, size, mediaType),
         authorization: 'r2',
         expireTime: Date.now() + 600000,
         headers: {

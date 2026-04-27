@@ -113,6 +113,13 @@ export function ImageCropper({ file, index, total, onApply, onSkip, onCancelAll 
     setCroppedAreaPixels(areaPixels);
   }, []);
 
+  const resetCropState = () => {
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setRotation(0);
+    setAspect(undefined);
+  };
+
   const handleApply = async () => {
     if (!imageSrc || !croppedAreaPixels) return;
     setProcessing(true);
@@ -237,6 +244,13 @@ export function ImageCropper({ file, index, total, onApply, onSkip, onCancelAll 
         </div>
 
         {/* Apply */}
+        <button
+          type="button"
+          onClick={resetCropState}
+          className="w-full rounded-full bg-white/10 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/20"
+        >
+          恢复原状
+        </button>
         <button
           type="button"
           onClick={handleApply}
