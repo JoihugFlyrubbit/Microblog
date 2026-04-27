@@ -149,6 +149,9 @@ Before making your fork public:
 - Rotate secrets if any real secret was ever committed.
 - Review `LICENSE` and package metadata.
 
+For the ongoing public-repo workflow, backup boundaries, and new-window handoff
+rules, see [`docs/public-maintenance.md`](./docs/public-maintenance.md).
+
 ## Known Limits
 
 - Video upload is still disabled until the R2 Range read path is fully validated for production.
