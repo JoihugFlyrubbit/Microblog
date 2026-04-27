@@ -7,12 +7,12 @@ import { Env, SessionData } from '../types';
 import { authMiddleware, getSessionOptions } from '../middleware/auth';
 
 const loginSchema = z.object({
-  password: z.string().min(1),
+  password: z.string().min(1).max(256),
 });
 
 const changePasswordSchema = z.object({
-  oldPassword: z.string().min(1),
-  newPassword: z.string().min(6),
+  oldPassword: z.string().min(1).max(256),
+  newPassword: z.string().min(12).max(256),
 });
 
 const isAdminBootstrapAllowed = (env: Env) => env.ALLOW_ADMIN_BOOTSTRAP === 'true';

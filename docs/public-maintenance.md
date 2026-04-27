@@ -68,30 +68,72 @@ private bucket, not this repo.
 Use this flow for future code changes:
 
 1. Edit source files.
-2. Run validation:
+2. Install the local git hook once per clone:
+
+```bash
+./scripts/install-git-hooks.sh
+```
+
+3. Run validation:
 
 ```bash
 cd api && npm run typecheck
 cd ../frontend && npm run lint && npm run build
 ```
 
-3. Scan the staged diff:
+4. Stage only source changes, then run the public-safety scan:
+
+```bash
+./scripts/public-safety-check.sh --staged
+```
+
+The pre-commit hook runs the same staged scan automatically. GitHub Actions runs
+the full tracked-file scan plus API/frontend validation on pushes and pull
+requests.
+
+5. Scan the staged diff:
 
 ```bash
 git diff --cached
 git diff --cached --name-only
 ```
 
-4. Scan the repository for accidental private values:
+6. When changing public-safety rules, scan all tracked files and the current
+   worktree including untracked non-ignored files:
 
 ```bash
-git grep -n -I -E "password|secret|token|private_key|latitude|longitude|192\\.168\\.|workers\\.dev|pages\\.dev"
+./scripts/public-safety-check.sh --all
+./scripts/public-safety-check.sh --worktree
 ```
 
-Review each match. Placeholders and documentation examples are acceptable only
-when they are generic and not personally identifying.
+Review any failure before committing. Placeholders and documentation examples
+are acceptable only when they are generic and not personally identifying.
 
-5. Commit only after the working tree contains source changes, not local data.
+7. Commit only after the working tree contains source changes, not local data.
+
+## Password Rotation
+
+The admin password is stored in D1 as a bcrypt hash in `users.password_hash`.
+It is not a Cloudflare secret and should never be written to `.dev.vars`,
+`.env.local`, `wrangler.toml`, sync config, README, or issue text.
+
+Use the deployed HTTPS site or API endpoint to change it. Do not paste the new
+password into chat or commit it. The `/auth/change-password` endpoint requires an
+authenticated session and rejects new passwords shorter than 12 characters.
+
+From a trusted terminal, rotate the production password with:
+
+```bash
+./scripts/change-admin-password.sh https://your-pages-site.pages.dev/api
+```
+
+The script prompts with hidden input. It refuses non-HTTPS API URLs except
+localhost development URLs.
+
+For production, browser requests should go to the Cloudflare Pages HTTPS site
+and use the same-origin `/api` proxy. In that deployment shape, the password is
+sent over HTTPS to Cloudflare, not as plaintext over the network. The login input
+is a password field so it is not displayed on screen while typing.
 
 ## Public Release Check
 

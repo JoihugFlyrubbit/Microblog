@@ -152,6 +152,21 @@ Before making your fork public:
 For the ongoing public-repo workflow, backup boundaries, and new-window handoff
 rules, see [`docs/public-maintenance.md`](./docs/public-maintenance.md).
 
+Install the local public-safety hook before committing from a fresh clone:
+
+```bash
+./scripts/install-git-hooks.sh
+```
+
+The hook runs `scripts/public-safety-check.sh --staged`. GitHub Actions runs the
+same safety scan on tracked files plus API/frontend validation.
+
+To rotate the deployed admin password from a trusted terminal:
+
+```bash
+./scripts/change-admin-password.sh https://your-pages-site.pages.dev/api
+```
+
 ## Known Limits
 
 - Video upload is still disabled until the R2 Range read path is fully validated for production.

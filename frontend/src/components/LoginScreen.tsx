@@ -99,13 +99,13 @@ export function LoginScreen() {
               </label>
               <input
                 ref={passwordInputRef}
-                type="text"
+                type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoFocus
                 autoCapitalize="none"
                 autoCorrect="off"
-                autoComplete="off"
+                autoComplete="current-password"
                 spellCheck={false}
                 className="field-input w-full px-4 py-3"
                 placeholder="输入密码"
