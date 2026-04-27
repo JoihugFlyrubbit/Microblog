@@ -20,7 +20,7 @@ binding = "MEDIA_BUCKET"
 bucket_name = "your-local-r2-bucket"
 
 [env.production]
-vars = { ENVIRONMENT = "production", ALLOW_ADMIN_BOOTSTRAP = "false", ALLOWED_ORIGINS = "https://your-pages-site.pages.dev", SESSION_SAME_SITE = "none" }
+vars = { ENVIRONMENT = "production", ALLOW_ADMIN_BOOTSTRAP = "false", ALLOWED_ORIGINS = "https://your-pages-site.pages.dev", SESSION_SAME_SITE = "lax" }
 
 [[env.production.d1_databases]]
 binding = "DB"

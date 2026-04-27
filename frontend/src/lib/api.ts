@@ -1,13 +1,24 @@
 // API client for calling Workers API
 export function getApiBase() {
+  if (typeof window !== 'undefined') {
+    const { hostname, protocol } = window.location;
+    const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
+    const isPrivateLan = /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(hostname);
+    if (!isLocalHost && !isPrivateLan) {
+      return '/api';
+    }
+
+    const configuredApiBase = process.env.NEXT_PUBLIC_API_URL;
+    if (configuredApiBase) {
+      return configuredApiBase.replace(/\/$/, '');
+    }
+
+    return `${protocol}//${hostname}:8787`;
+  }
+
   const configuredApiBase = process.env.NEXT_PUBLIC_API_URL;
   if (configuredApiBase) {
     return configuredApiBase.replace(/\/$/, '');
-  }
-
-  if (typeof window !== 'undefined') {
-    const { hostname, protocol } = window.location;
-    return `${protocol}//${hostname}:8787`;
   }
 
   return 'http://localhost:8787';

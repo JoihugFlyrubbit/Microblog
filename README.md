@@ -74,7 +74,7 @@ npx wrangler r2 bucket create microblog-media
 
 ```text
 ALLOWED_ORIGINS=https://your-pages-site.pages.dev
-SESSION_SAME_SITE=none
+SESSION_SAME_SITE=lax
 ENV_LOCATION_LABEL=Your Location
 ENV_LATITUDE=0
 ENV_LONGITUDE=0
@@ -113,8 +113,8 @@ npm run deploy -- --env production
 Build command: npm run build
 Build output: out
 Root directory: frontend
-Environment variable: NEXT_PUBLIC_API_URL=https://your-api.your-subdomain.workers.dev
 Environment variable: NEXT_PUBLIC_SITE_URL=https://your-pages-site.pages.dev
+Runtime variable: MICROBLOG_API_ORIGIN=https://your-api.your-subdomain.workers.dev
 ```
 
 ## Obsidian Sync
