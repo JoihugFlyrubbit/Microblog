@@ -44,6 +44,7 @@ function MediaPreviewModal({
   disabled,
 }: MediaPreviewModalProps) {
   const [mounted, setMounted] = useState(false);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const current = media[activeIndex];
   const hasPrevious = activeIndex > 0;
   const hasNext = activeIndex < media.length - 1;
@@ -94,22 +95,35 @@ function MediaPreviewModal({
       </div>
 
       <div className="relative min-h-0 flex-1">
-        {current.type === "image" ? (
-          <Image
-            src={current.url}
-            alt=""
-            fill
-            sizes="100vw"
-            className="object-contain"
-            unoptimized
-          />
-        ) : (
-          <video
-            src={current.url}
-            className="h-full w-full object-contain"
-            controls
-          />
-        )}
+        <div
+          className="relative h-full w-full"
+          onTouchStart={(event) => setTouchStartX(event.touches[0]?.clientX ?? null)}
+          onTouchEnd={(event) => {
+            if (touchStartX === null) return;
+            const deltaX = event.changedTouches[0]?.clientX - touchStartX;
+            setTouchStartX(null);
+            if (Math.abs(deltaX) < 45) return;
+            if (deltaX > 0 && hasPrevious) onChangeIndex(activeIndex - 1);
+            if (deltaX < 0 && hasNext) onChangeIndex(activeIndex + 1);
+          }}
+        >
+          {current.type === "image" ? (
+            <Image
+              src={current.url}
+              alt=""
+              fill
+              sizes="100vw"
+              className="object-contain"
+              unoptimized
+            />
+          ) : (
+            <video
+              src={current.url}
+              className="h-full w-full object-contain"
+              controls
+            />
+          )}
+        </div>
 
         {hasPrevious && (
           <button
