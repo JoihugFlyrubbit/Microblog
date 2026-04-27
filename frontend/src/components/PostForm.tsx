@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { postsApi, Media, PostWithRelations, TagWithCount, tagsApi } from "@/lib/api";
 import { MediaUploader } from "./MediaUploader";
 import { ImageCropper } from "./ImageCropper";
@@ -23,6 +24,146 @@ interface PostFormProps {
   editPost?: PostWithRelations;
 }
 
+interface MediaPreviewModalProps {
+  media: Media[];
+  activeIndex: number;
+  onChangeIndex: (index: number) => void;
+  onClose: () => void;
+  onDelete: (mediaId: number) => void;
+  onEdit: (media: Media) => void;
+  disabled?: boolean;
+}
+
+function MediaPreviewModal({
+  media,
+  activeIndex,
+  onChangeIndex,
+  onClose,
+  onDelete,
+  onEdit,
+  disabled,
+}: MediaPreviewModalProps) {
+  const [mounted, setMounted] = useState(false);
+  const current = media[activeIndex];
+  const hasPrevious = activeIndex > 0;
+  const hasNext = activeIndex < media.length - 1;
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowLeft" && hasPrevious) onChangeIndex(activeIndex - 1);
+      if (event.key === "ArrowRight" && hasNext) onChangeIndex(activeIndex + 1);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeIndex, hasNext, hasPrevious, onChangeIndex, onClose]);
+
+  if (!mounted || !current) return null;
+
+  const handleDelete = () => {
+    onDelete(current.id);
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-[90] flex flex-col bg-black/95 text-white">
+      <div className="flex items-center justify-between px-4 py-3" style={{ paddingTop: "calc(0.75rem + var(--safe-top))" }}>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-medium hover:bg-white/20"
+        >
+          关闭
+        </button>
+        <span className="text-sm text-white/70">
+          {activeIndex + 1} / {media.length}
+        </span>
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={disabled}
+          className="rounded-full bg-red-500 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+        >
+          删除
+        </button>
+      </div>
+
+      <div className="relative min-h-0 flex-1">
+        {current.type === "image" ? (
+          <Image
+            src={current.url}
+            alt=""
+            fill
+            sizes="100vw"
+            className="object-contain"
+            unoptimized
+          />
+        ) : (
+          <video
+            src={current.url}
+            className="h-full w-full object-contain"
+            controls
+          />
+        )}
+
+        {hasPrevious && (
+          <button
+            type="button"
+            onClick={() => onChangeIndex(activeIndex - 1)}
+            className="absolute left-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-2xl text-white"
+            aria-label="上一张"
+          >
+            ‹
+          </button>
+        )}
+        {hasNext && (
+          <button
+            type="button"
+            onClick={() => onChangeIndex(activeIndex + 1)}
+            className="absolute right-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-2xl text-white"
+            aria-label="下一张"
+          >
+            ›
+          </button>
+        )}
+      </div>
+
+      <div className="flex gap-3 px-4 pb-4 pt-3" style={{ paddingBottom: "calc(1rem + var(--safe-bottom))" }}>
+        <button
+          type="button"
+          onClick={() => onChangeIndex(activeIndex - 1)}
+          disabled={!hasPrevious}
+          className="flex-1 rounded-full bg-white/10 px-4 py-3 text-sm font-semibold disabled:opacity-35"
+        >
+          上一张
+        </button>
+        <button
+          type="button"
+          onClick={() => onEdit(current)}
+          disabled={disabled || current.type !== "image"}
+          className="flex-1 rounded-full bg-[#64b7ea] px-4 py-3 text-sm font-semibold text-white disabled:opacity-35"
+        >
+          编辑
+        </button>
+        <button
+          type="button"
+          onClick={() => onChangeIndex(activeIndex + 1)}
+          disabled={!hasNext}
+          className="flex-1 rounded-full bg-white/10 px-4 py-3 text-sm font-semibold disabled:opacity-35"
+        >
+          下一张
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
   const isEditing = !!editPost;
   const [content, setContent] = useState(editPost?.content ?? "");
@@ -34,6 +175,7 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cropping, setCropping] = useState<{ mediaId: number; file: File } | null>(null);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
   const detectedTags = Array.from(
     new Set(
@@ -119,12 +261,37 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
   };
 
   const handleRemoveMedia = (mediaId: number) => {
-    setMedia((prev) => prev.filter((m) => m.id !== mediaId));
+    setMedia((prev) => {
+      const removeIndex = prev.findIndex((m) => m.id === mediaId);
+      const next = prev.filter((m) => m.id !== mediaId);
+      setPreviewIndex((current) => {
+        if (current === null || removeIndex === -1) return current;
+        if (next.length === 0) return null;
+        if (current === removeIndex) return Math.min(removeIndex, next.length - 1);
+        if (current > removeIndex) return current - 1;
+        return current;
+      });
+      return next;
+    });
+  };
+
+  const handleMoveMedia = (mediaId: number, direction: -1 | 1) => {
+    setMedia((prev) => {
+      const index = prev.findIndex((m) => m.id === mediaId);
+      const targetIndex = index + direction;
+      if (index < 0 || targetIndex < 0 || targetIndex >= prev.length) return prev;
+
+      const next = [...prev];
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      setPreviewIndex((current) => (current === index ? targetIndex : current === targetIndex ? index : current));
+      return next;
+    });
   };
 
   const handleStartCrop = async (m: Media) => {
     if (m.type !== "image") return;
     try {
+      setPreviewIndex(null);
       const file = await urlToFile(m.url, `media-${m.id}.jpg`);
       setCropping({ mediaId: m.id, file });
     } catch {
@@ -221,29 +388,38 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
 
         {/* Media preview */}
         {media.length > 0 && (
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            {media.map((m) => (
+          <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {media.map((m, index) => (
               <div key={m.id} className="relative aspect-square group">
-                {m.type === "image" ? (
-                  <Image
-                    src={m.url}
-                    alt=""
-                    fill
-                    sizes="(min-width: 768px) 160px, 33vw"
-                    className="h-full w-full rounded-none object-cover"
-                    unoptimized
-                  />
-                ) : (
-                  <video
-                    src={m.url}
-                    className="h-full w-full rounded-none object-cover"
-                  />
-                )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewIndex(index)}
+                  disabled={submitting}
+                  className="relative h-full w-full overflow-hidden bg-black/5"
+                  aria-label={`预览第 ${index + 1} 个媒体`}
+                >
+                  {m.type === "image" ? (
+                    <Image
+                      src={m.url}
+                      alt=""
+                      fill
+                      sizes="(min-width: 768px) 160px, 33vw"
+                      className="h-full w-full rounded-none object-cover"
+                      unoptimized
+                    />
+                  ) : (
+                    <video
+                      src={m.url}
+                      className="h-full w-full rounded-none object-cover"
+                    />
+                  )}
+                </button>
                 <button
                   type="button"
                   onClick={() => handleRemoveMedia(m.id)}
                   disabled={submitting}
-                  className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-sm"
+                  className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-sm text-white shadow-sm sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
+                  aria-label="删除媒体"
                 >
                   ×
                 </button>
@@ -252,12 +428,32 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
                     type="button"
                     onClick={() => handleStartCrop(m)}
                     disabled={submitting}
-                    className="absolute bottom-1 left-1 px-2 h-6 bg-black/55 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs"
+                    className="absolute bottom-1 left-1 flex h-7 items-center justify-center rounded-full bg-black/60 px-2 text-xs text-white shadow-sm sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
                     title="裁剪"
                   >
-                    裁剪
+                    编辑
                   </button>
                 )}
+                <div className="absolute bottom-1 right-1 flex gap-1 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => handleMoveMedia(m.id, -1)}
+                    disabled={submitting || index === 0}
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-sm text-white shadow-sm disabled:opacity-35"
+                    aria-label="前移媒体"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMoveMedia(m.id, 1)}
+                    disabled={submitting || index === media.length - 1}
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-sm text-white shadow-sm disabled:opacity-35"
+                    aria-label="后移媒体"
+                  >
+                    ›
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -278,6 +474,18 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
           onApply={handleCropApply}
           onSkip={() => setCropping(null)}
           onCancelAll={() => setCropping(null)}
+        />
+      )}
+
+      {previewIndex !== null && media[previewIndex] && (
+        <MediaPreviewModal
+          media={media}
+          activeIndex={previewIndex}
+          onChangeIndex={setPreviewIndex}
+          onClose={() => setPreviewIndex(null)}
+          onDelete={handleRemoveMedia}
+          onEdit={handleStartCrop}
+          disabled={submitting}
         />
       )}
 
