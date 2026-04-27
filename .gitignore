@@ -30,9 +30,20 @@ yarn-error.log*
 # misc
 *.pem
 *.tsbuildinfo
+*.bundle
+*.dump
+*.bak
+*.backup
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-*
 
 # database backups (contain data, not code)
 **/backups/*.sql
+**/backups/**
+**/*backup*.sql
+**/*dump*.sql
 api/backups/
 
 # local sync config
