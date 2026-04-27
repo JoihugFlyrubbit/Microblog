@@ -91,6 +91,11 @@ The pre-commit hook runs the same staged scan automatically. GitHub Actions runs
 the full tracked-file scan plus API/frontend validation on pushes and pull
 requests.
 
+An additional GitHub Actions secret scanner runs in advisory mode first. It is
+intended to catch unknown secret formats before they become required checks.
+Once its false positive rate is understood, promote it to a required status
+check in the repository ruleset.
+
 5. Scan the staged diff:
 
 ```bash
