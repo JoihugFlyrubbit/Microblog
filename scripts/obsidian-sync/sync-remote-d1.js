@@ -8,6 +8,10 @@ const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
 const RENDER_FORMAT_VERSION = 5;
+const HOME_DIR = process.env.HOME || '';
+const HEALTH_STATE_FILE = HOME_DIR
+  ? path.join(HOME_DIR, 'Library', 'Logs', 'microblog-obsidian-sync.state.json')
+  : path.join(__dirname, '.microblog-obsidian-sync.state.json');
 
 function parseArgs(argv) {
   return {
@@ -35,11 +39,64 @@ function runWrangler(args) {
   const result = spawnSync('npx', ['wrangler', ...args], {
     cwd: path.resolve(__dirname, '../../api'),
     encoding: 'utf8',
+    env: process.env,
   });
   if (result.status !== 0) {
     throw new Error((result.stderr || result.stdout || `wrangler ${args.join(' ')} failed`).trim());
   }
   return result.stdout;
+}
+
+function loadHealthState() {
+  try {
+    return JSON.parse(fs.readFileSync(HEALTH_STATE_FILE, 'utf8'));
+  } catch {
+    return { status: 'unknown', lastError: null };
+  }
+}
+
+function saveHealthState(state) {
+  fs.mkdirSync(path.dirname(HEALTH_STATE_FILE), { recursive: true });
+  fs.writeFileSync(HEALTH_STATE_FILE, JSON.stringify(state, null, 2));
+}
+
+function notify(title, message) {
+  const escapedTitle = title.replace(/"/g, '\\"');
+  const escapedMessage = message.replace(/"/g, '\\"');
+  spawnSync('osascript', [
+    '-e',
+    `display notification "${escapedMessage}" with title "${escapedTitle}"`,
+  ], {
+    encoding: 'utf8',
+  });
+}
+
+function markFailure(errorMessage) {
+  const state = loadHealthState();
+  const next = {
+    status: 'error',
+    lastError: errorMessage,
+    updatedAt: timestamp(),
+  };
+  const changed = state.status !== 'error' || state.lastError !== errorMessage;
+  saveHealthState(next);
+  if (changed) {
+    notify('Microblog sync failed', errorMessage.slice(0, 180));
+  }
+}
+
+function markHealthy(summary) {
+  const state = loadHealthState();
+  const next = {
+    status: 'ok',
+    lastError: null,
+    updatedAt: timestamp(),
+    lastSuccess: summary,
+  };
+  saveHealthState(next);
+  if (state.status === 'error') {
+    notify('Microblog sync recovered', summary.slice(0, 180));
+  }
 }
 
 function d1(config, sql) {
@@ -287,7 +344,9 @@ async function runOnce(config) {
     }
   }
 
-  console.log(`[${timestamp()}] remote D1 同步完成：共 ${posts.length} 篇，写入 ${written}，跳过 ${skipped}，新下载图片 ${imagesDownloaded}，标记删除 ${markedDeleted}`);
+  const summary = `共 ${posts.length} 篇，写入 ${written}，跳过 ${skipped}，新下载图片 ${imagesDownloaded}，标记删除 ${markedDeleted}`;
+  console.log(`[${timestamp()}] remote D1 同步完成：${summary}`);
+  markHealthy(summary);
 }
 
 async function main() {
@@ -303,6 +362,7 @@ async function main() {
       await runOnce(config);
     } catch (error) {
       console.error(`[${timestamp()}] 同步失败：${error.message}`);
+      markFailure(error.message);
     }
     await new Promise((resolve) => setTimeout(resolve, config.intervalSeconds * 1000));
   }
@@ -310,5 +370,6 @@ async function main() {
 
 main().catch((error) => {
   console.error(`[${timestamp()}] 错误：${error.message}`);
+  markFailure(error.message);
   process.exit(1);
 });

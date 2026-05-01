@@ -138,6 +138,26 @@ Remote D1/R2 mode, useful when local Node cannot reliably reach `*.workers.dev`:
 node sync-remote-d1.js --watch
 ```
 
+For a macOS LaunchAgent, you can optionally provide a stable Cloudflare token in:
+
+```bash
+~/Claude/secrets/microblog-sync.env
+```
+
+Example:
+
+```bash
+export CLOUDFLARE_API_TOKEN=your_token_here
+```
+
+If the watcher enters a failure state or recovers, it writes health state to:
+
+```bash
+~/Library/Logs/microblog-obsidian-sync.state.json
+```
+
+and shows a local macOS notification.
+
 `sync.config.json` is ignored by git because it contains local paths and the admin password.
 
 ## Public Release Notes
