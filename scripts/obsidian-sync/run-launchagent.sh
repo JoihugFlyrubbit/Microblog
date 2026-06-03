@@ -10,4 +10,8 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
+if [[ -n "${CLOUDFLARE_OBSIDIAN_SYNC_API_TOKEN:-}" ]]; then
+  export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_OBSIDIAN_SYNC_API_TOKEN"
+fi
+
 exec /usr/local/bin/node "$SCRIPT_DIR/sync-remote-d1.js" --watch
