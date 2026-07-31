@@ -97,8 +97,8 @@ postsRouter.get('/', optionalAuthMiddleware, zValidator('query', listPostsSchema
   const { page, limit, date, tag, visibility, pinned } = c.req.valid('query');
   const isAuthenticated = c.get('userId') !== undefined;
 
-  const pageNum = parseInt(page);
-  const limitNum = Math.min(parseInt(limit), 100); // Max 100 per page
+  const pageNum = Math.max(1, parseInt(page) || 1);
+  const limitNum = Math.max(1, Math.min(parseInt(limit) || 20, 100)); // Max 100 per page
   const offset = (pageNum - 1) * limitNum;
 
   // Build query

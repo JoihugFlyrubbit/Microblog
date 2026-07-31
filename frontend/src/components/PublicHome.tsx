@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { BackToTopButton } from "@/components/BackToTopButton";
 import { BrandMark } from "@/components/BrandMark";
-import { Post } from "@/lib/api";
+import { analyticsApi, Post } from "@/lib/api";
 import { Calendar } from "@/components/Calendar";
 import { EnvironmentHeaderBadge } from "@/components/EnvironmentHeaderBadge";
 import { PostDetailModal } from "@/components/PostDetailModal";
@@ -32,6 +32,9 @@ export function PublicHome() {
 
   useEffect(() => {
     document.title = "Joi的Microblog";
+    analyticsApi.recordPageViewOnce().catch((error) => {
+      console.error("Failed to record page view:", error);
+    });
   }, []);
 
   useEffect(() => {

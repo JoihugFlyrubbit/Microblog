@@ -207,6 +207,9 @@ authRouter.get('/session', async (c) => {
     });
   }
 
+  // Roll the persistent cookie forward whenever the installed app checks its session.
+  await session.save();
+
   return c.json({
     success: true,
     data: {

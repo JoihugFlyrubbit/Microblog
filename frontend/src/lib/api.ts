@@ -184,6 +184,7 @@ export interface Media {
 export interface Tag {
   id: number;
   name: string;
+  category_id?: number | null;
   created_at: string;
 }
 
@@ -352,6 +353,22 @@ export const exportApi = {
 // Tags API
 export interface TagWithCount extends Tag {
   post_count: number;
+  last_used_at?: string | null;
+}
+
+export interface TagCategory {
+  id: number;
+  name: string;
+  sort_order: number;
+  collapsed_limit: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TagCollectionData {
+  tags: TagWithCount[];
+  categories: TagCategory[];
+  collapsedLimit: number;
 }
 
 export interface CalendarDate {
@@ -363,8 +380,58 @@ export const tagsApi = {
   list: (params?: { includePrivate?: boolean }) => {
     const query = new URLSearchParams();
     if (params?.includePrivate) query.set('includePrivate', 'true');
-    return apiClient<{ tags: TagWithCount[] }>(`/tags?${query}`);
+    return apiClient<TagCollectionData>(`/tags?${query}`);
   },
+
+  manage: () => apiClient<TagCollectionData>('/tags/manage'),
+
+  createCategory: (data: { name: string; tagIds?: number[]; collapsedLimit?: number }) =>
+    apiClient<{ category: TagCategory }>('/tags/categories', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateCategory: (id: number, data: { name?: string; tagIds?: number[]; collapsedLimit?: number }) =>
+    apiClient<Record<string, never>>(`/tags/categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteCategory: (id: number) =>
+    apiClient<Record<string, never>>(`/tags/categories/${id}`, { method: 'DELETE' }),
+
+  reorderCategories: (categoryIds: number[]) =>
+    apiClient<Record<string, never>>('/tags/categories/order', {
+      method: 'PUT',
+      body: JSON.stringify({ categoryIds }),
+    }),
+
+  updateDisplaySettings: (collapsedLimit: number) =>
+    apiClient<{ collapsedLimit: number }>('/tags/display-settings', {
+      method: 'PUT',
+      body: JSON.stringify({ collapsedLimit }),
+    }),
+
+  rename: (id: number, name: string) =>
+    apiClient<{ merged: boolean; tagId: number }>(`/tags/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    }),
+
+  move: (id: number, categoryId: number | null) =>
+    apiClient<Record<string, never>>(`/tags/${id}/category`, {
+      method: 'PUT',
+      body: JSON.stringify({ categoryId }),
+    }),
+
+  moveMany: (tagIds: number[], categoryId: number | null) =>
+    apiClient<Record<string, never>>('/tags/category/batch', {
+      method: 'PUT',
+      body: JSON.stringify({ tagIds, categoryId }),
+    }),
+
+  delete: (id: number) =>
+    apiClient<Record<string, never>>(`/tags/${id}`, { method: 'DELETE' }),
 
   getPosts: (name: string) =>
     apiClient<{ posts: Post[] }>(`/tags/${encodeURIComponent(name)}/posts`),
@@ -376,4 +443,27 @@ export const tagsApi = {
     if (params?.includePrivate) query.set('includePrivate', 'true');
     return apiClient<{ dates: CalendarDate[] }>(`/tags/calendar/dates?${query}`);
   },
+};
+
+export interface AnalyticsSummary {
+  totalViews: number;
+  todayViews: number;
+  last7DaysViews: number;
+}
+
+let pageViewRecorded = false;
+
+export const analyticsApi = {
+  recordPageViewOnce: async () => {
+    if (pageViewRecorded) return;
+    pageViewRecorded = true;
+    try {
+      await apiClient<Record<string, never>>('/analytics/page-view', { method: 'POST' });
+    } catch (error) {
+      pageViewRecorded = false;
+      throw error;
+    }
+  },
+
+  summary: () => apiClient<AnalyticsSummary>('/analytics/summary'),
 };

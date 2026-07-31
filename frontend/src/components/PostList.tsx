@@ -22,6 +22,16 @@ export function PostList({ date, tag, visibility = 'public', pinned, canManage =
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setPageInput("1");
+  }, [date, tag, visibility, pinned]);
+
+  useEffect(() => {
+    setPageInput(String(currentPage));
+  }, [currentPage]);
 
   const loadPosts = useCallback(async () => {
     setLoading(true);
@@ -93,8 +103,18 @@ export function PostList({ date, tag, visibility = 'public', pinned, canManage =
 
   // 分页控件：纯文字「上一页 / 第 X/Y 页（条数可选）/ 下一页」。
   // compact=true 时省略 "(X 条)"（用于顶部行，旁边已显示"共 X 条"避免重复）。
+  const goToPage = () => {
+    if (!pagination) return;
+    const requested = Number.parseInt(pageInput, 10);
+    if (!Number.isFinite(requested)) {
+      setPageInput(String(currentPage));
+      return;
+    }
+    setCurrentPage(Math.min(pagination.totalPages, Math.max(1, requested)));
+  };
+
   const renderPaginator = (compact: boolean) => (
-    <div className="flex items-center gap-3 text-sm">
+    <div className="flex flex-wrap items-center justify-end gap-2 text-sm">
       <button
         onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
         disabled={currentPage === 1}
@@ -113,6 +133,26 @@ export function PostList({ date, tag, visibility = 'public', pinned, canManage =
       >
         下一页
       </button>
+      <form
+        className="ml-1 flex items-center gap-1.5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          goToPage();
+        }}
+      >
+        <label className="sr-only" htmlFor={`page-input-${compact ? "top" : "bottom"}`}>跳转页码</label>
+        <input
+          id={`page-input-${compact ? "top" : "bottom"}`}
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={pagination!.totalPages}
+          value={pageInput}
+          onChange={(event) => setPageInput(event.target.value)}
+          className="field-input w-16 px-2 py-1 text-center text-sm"
+        />
+        <button type="submit" className="font-semibold text-[#5d8fd6] hover:underline">跳转</button>
+      </form>
     </div>
   );
 

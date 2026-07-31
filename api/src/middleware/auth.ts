@@ -9,11 +9,13 @@ function sessionSameSite(env: Env): 'lax' | 'strict' | 'none' {
 export const getSessionOptions = (env: Env): SessionOptions => ({
   password: env.SESSION_SECRET,
   cookieName: 'microblog_session',
+  ttl: 60 * 60 * 24 * 30,
   cookieOptions: {
     secure: env.ENVIRONMENT === 'production',
     sameSite: sessionSameSite(env),
     httpOnly: true,
-    maxAge: 60 * 60 * 24 * 7, // 7 days
+    path: '/',
+    maxAge: 60 * 60 * 24 * 30 - 60,
   },
 });
 

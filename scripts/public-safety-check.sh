@@ -21,7 +21,7 @@ is_example_path() {
 
 is_allowed_sql() {
   case "$1" in
-    api/src/db/schema.sql|api/scripts/init-db.sql|api/scripts/add-pinned-column.sql) return 0 ;;
+    api/src/db/schema.sql|api/scripts/init-db.sql|api/scripts/add-pinned-column.sql|api/migrations/[0-9][0-9][0-9][0-9]_*.sql) return 0 ;;
     *) return 1 ;;
   esac
 }

@@ -12,6 +12,7 @@ import { uploadRouter } from './routes/upload';
 import { exportRouter } from './routes/export';
 import { environmentRouter } from './routes/environment';
 import { mediaRouter } from './routes/media';
+import { analyticsRouter } from './routes/analytics';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -85,6 +86,7 @@ app.route('/upload', uploadRouter);
 app.route('/export', exportRouter);
 app.route('/environment', environmentRouter);
 app.route('/media', mediaRouter);
+app.route('/analytics', analyticsRouter);
 
 // 404 handler
 app.notFound((c) => {
