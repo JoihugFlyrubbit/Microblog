@@ -4,8 +4,9 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { getIronSession } from 'iron-session';
 import { Env, SessionData } from '../types';
-import { authMiddleware, getSessionOptions } from '../middleware/auth';
+import { authMiddleware, getSessionOptions, getValidSessionUser } from '../middleware/auth';
 import { checkRateLimit, hasAllowedRequestOrigin, resolveRequestSource } from '../lib/request-security';
+import { logLoginAttempt } from '../lib/login-logs';
 
 const loginSchema = z.object({
   password: z.string().min(1).max(256),
@@ -30,12 +31,6 @@ async function isLoginRateLimited(db: D1Database, ip: string) {
       AND created_at > datetime('now', '-15 minutes')
   `).bind(ip).first<{ count: number }>();
   return Number(local?.count || 0) >= 8;
-}
-
-async function logLoginAttempt(db: D1Database, ip: string, userAgent: string, success: boolean) {
-  await db.prepare(
-    'INSERT INTO login_logs (ip, user_agent, success) VALUES (?, ?, ?)'
-  ).bind(ip, userAgent, success ? 1 : 0).run();
 }
 
 // Login
@@ -83,7 +78,7 @@ authRouter.post('/login', zValidator('json', loginSchema), async (c) => {
   // Get user (single user system)
   let user = await db.prepare(
     'SELECT * FROM users WHERE username = ?'
-  ).bind('admin').first() as { id: number; username: string; password_hash: string; nickname: string; avatar_url: string } | null;
+  ).bind('admin').first() as { id: number; username: string; password_hash: string; nickname: string; avatar_url: string; session_version: number } | null;
 
   // Allow explicit bootstrap in local development only.
   if (!user) {
@@ -99,8 +94,8 @@ authRouter.post('/login', zValidator('json', loginSchema), async (c) => {
     // Hash the provided password and create admin user
     const passwordHash = await bcrypt.hash(password, 10);
     const result = await db.prepare(
-      'INSERT INTO users (username, password_hash, nickname, bio, email, wechat, avatar_url, header_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, username, nickname, avatar_url'
-    ).bind('admin', passwordHash, '管理员', '', '', '', '', '').first() as { id: number; username: string; nickname: string; avatar_url: string };
+      'INSERT INTO users (username, password_hash, nickname, bio, email, wechat, avatar_url, header_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, username, nickname, avatar_url, session_version'
+    ).bind('admin', passwordHash, '管理员', '', '', '', '', '').first() as { id: number; username: string; nickname: string; avatar_url: string; session_version: number };
 
     // Log the auto-creation
     await logLoginAttempt(db, client.ip, client.ua, true);
@@ -114,6 +109,7 @@ authRouter.post('/login', zValidator('json', loginSchema), async (c) => {
 
     session.userId = result.id;
     session.username = result.username;
+    session.sessionVersion = result.session_version;
     session.isLoggedIn = true;
     await session.save();
 
@@ -152,6 +148,7 @@ authRouter.post('/login', zValidator('json', loginSchema), async (c) => {
 
   session.userId = user.id;
   session.username = user.username;
+  session.sessionVersion = user.session_version;
   session.isLoggedIn = true;
   await session.save();
 
@@ -196,18 +193,32 @@ authRouter.get('/session', async (c) => {
     });
   }
 
-  // Get user details
-  const db = c.env.DB;
-  const user = await db.prepare(
-    'SELECT id, username, nickname, avatar_url FROM users WHERE id = ?'
-  ).bind(session.userId).first();
+  let validUser;
+  try {
+    validUser = await getValidSessionUser(c.env, session);
+  } catch (error) {
+    console.error('Session lookup failed:', error);
+    return c.json({
+      success: false,
+      error: { code: 'AUTH_UNAVAILABLE', message: 'Authentication is temporarily unavailable' },
+    }, 503);
+  }
 
-  if (!user) {
+  if (!validUser) {
     session.destroy();
     return c.json({
       success: true,
       data: { isLoggedIn: false },
     });
+  }
+
+  const user = await c.env.DB.prepare(
+    'SELECT id, username, nickname, avatar_url FROM users WHERE id = ?'
+  ).bind(validUser.id).first();
+
+  if (!user) {
+    session.destroy();
+    return c.json({ success: true, data: { isLoggedIn: false } });
   }
 
   // Roll the persistent cookie forward whenever the installed app checks its session.
@@ -252,10 +263,22 @@ authRouter.post('/change-password', authMiddleware, zValidator('json', changePas
   // Hash new password
   const newHash = await bcrypt.hash(newPassword, 10);
 
-  // Update password
-  await db.prepare(
-    'UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
-  ).bind(newHash, userId).run();
+  // The version increment atomically revokes every session issued before this update.
+  const updated = await db.prepare(
+    `UPDATE users
+     SET password_hash = ?, session_version = session_version + 1, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND password_hash = ?`
+  ).bind(newHash, userId, user.password_hash).run();
+
+  if (updated.meta.changes !== 1) {
+    return c.json({
+      success: false,
+      error: { code: 'PASSWORD_CHANGED', message: 'Password changed concurrently; sign in again' },
+    }, 409);
+  }
+
+  const session = await getIronSession<SessionData>(c.req.raw, c.res, getSessionOptions(c.env));
+  session.destroy();
 
   return c.json({ success: true });
 });

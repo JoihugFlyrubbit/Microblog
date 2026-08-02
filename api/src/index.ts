@@ -7,18 +7,20 @@ import { Env } from './types';
 import { authRouter } from './routes/auth';
 import { postsRouter } from './routes/posts';
 import { tagsRouter } from './routes/tags';
-import { settingsRouter } from './routes/settings';
 import { uploadRouter } from './routes/upload';
 import { exportRouter } from './routes/export';
 import { environmentRouter } from './routes/environment';
 import { mediaRouter } from './routes/media';
 import { analyticsRouter } from './routes/analytics';
 import { normalizeOrigin, parseAllowedOrigins } from './lib/request-security';
+import { cleanupExpiredLoginLogs } from './lib/login-logs';
+import { apiSecurityHeadersMiddleware, applyApiSecurityHeaders } from './middleware/security';
 
 const app = new Hono<{ Bindings: Env }>();
 
 // Middleware
 app.use(logger());
+app.use('/*', apiSecurityHeadersMiddleware);
 app.use('/*', cors({
   origin: (origin, c) => {
     const normalized = normalizeOrigin(origin);
@@ -59,7 +61,6 @@ app.get('/health', (c) => {
 app.route('/auth', authRouter);
 app.route('/posts', postsRouter);
 app.route('/tags', tagsRouter);
-app.route('/settings', settingsRouter);
 app.route('/upload', uploadRouter);
 app.route('/export', exportRouter);
 app.route('/environment', environmentRouter);
@@ -80,7 +81,7 @@ app.notFound((c) => {
 // Error handler
 app.onError((err, c) => {
   console.error('API Error:', err);
-  return c.json({
+  return applyApiSecurityHeaders(c.json({
     success: false,
     error: {
       code: 'INTERNAL_ERROR',
@@ -88,7 +89,16 @@ app.onError((err, c) => {
         ? 'Internal server error'
         : err.message,
     },
-  }, 500);
+  }, 500), c.req.raw);
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled(_controller, env, ctx) {
+    ctx.waitUntil(
+      cleanupExpiredLoginLogs(env.DB)
+        .then((result) => console.log(`Expired login logs removed: ${result.meta.changes}`))
+        .catch((error) => console.error('Login log cleanup failed:', error))
+    );
+  },
+} satisfies ExportedHandler<Env>;

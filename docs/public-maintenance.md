@@ -104,10 +104,9 @@ The pre-commit hook runs the same staged scan automatically. GitHub Actions runs
 the full tracked-file scan plus API/frontend validation on pushes and pull
 requests.
 
-An additional GitHub Actions secret scanner runs in advisory mode first. It is
-intended to catch unknown secret formats before they become required checks.
-Once its false positive rate is understood, promote it to a required status
-check in the repository ruleset.
+The Gitleaks GitHub Actions job scans full checkout history and fails when it
+finds a suspected secret. Its Action and scanner versions are pinned. Review
+findings narrowly; never add a broad allowlist merely to make the job green.
 
 5. Scan the staged diff:
 
@@ -152,6 +151,29 @@ For production, browser requests should go to the Cloudflare Pages HTTPS site
 and use the same-origin `/api` proxy. In that deployment shape, the password is
 sent over HTTPS to Cloudflare, not as plaintext over the network. The login input
 is a password field so it is not displayed on screen while typing.
+
+## Response and session security
+
+Cloudflare Pages reads `frontend/public/_headers` for static responses. Pages
+Functions do not inherit that file, so the `/api` proxy and API Worker attach
+their own API-specific security headers. The static CSP permits same-origin
+assets and API requests plus `data:`/`blob:` images and media. Next.js static
+export currently emits hydration scripts and runtime style attributes, so
+`script-src 'unsafe-inline'` and `style-src 'unsafe-inline'` remain documented
+exceptions. Removing either requires a separate build-time hash or nonce design
+and browser regression testing.
+
+Sessions include the user's integer `session_version`. Changing the password
+increments that value and revokes every previously issued cookie, including the
+current device. Deploying the migration also invalidates cookies issued before
+the field existed, so users sign in once after deployment. Cookies remain
+Secure in production, HttpOnly, SameSite=Lax, and use the 30-day rolling expiry.
+
+Security login logs contain only a truncated request source (64 characters), a
+truncated User-Agent (512 characters), success status, and timestamp. They do
+not contain request bodies, passwords, cookies, or proxy signatures. A daily
+Worker Cron Trigger deletes rows older than 90 days. Cleanup failures are logged
+without exposing a public cleanup endpoint or interrupting page requests.
 
 ## Public Release Check
 

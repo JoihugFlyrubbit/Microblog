@@ -227,64 +227,6 @@ uploadRouter.put('/r2/:key', authMiddleware, async (c) => {
   }
 });
 
-// Local upload endpoint - receives base64 data
-uploadRouter.post('/local/:key', authMiddleware, async (c) => {
-  const db = c.env.DB;
-  const key = decodeURIComponent(c.req.param('key'));
-
-  try {
-    const body = await c.req.json();
-    const { data, type, size, width, height } = body;
-
-    if (!data || !type) {
-      return c.json({
-        success: false,
-        error: { code: 'INVALID_DATA', message: '缺少文件数据' },
-      }, 400);
-    }
-
-    // Validate it's a data URL
-    if (!data.startsWith('data:')) {
-      return c.json({
-        success: false,
-        error: { code: 'INVALID_FORMAT', message: '文件数据格式无效' },
-      }, 400);
-    }
-
-    // Insert media record with base64 data as URL
-    const result = await db.prepare(`
-      INSERT INTO media (post_id, type, url, size, width, height, duration)
-      VALUES (NULL, ?, ?, ?, ?, ?, NULL)
-      RETURNING id
-    `).bind(
-      type,
-      data, // Store base64 data URL directly
-      size,
-      width || null,
-      height || null
-    ).first();
-
-    if (!result) {
-      throw new Error('Failed to insert media record');
-    }
-
-    return c.json({
-      success: true,
-      data: {
-        mediaId: result.id,
-        key,
-        url: data,
-      },
-    });
-  } catch (error) {
-    console.error('Local upload error:', error);
-    return c.json({
-      success: false,
-      error: { code: 'UPLOAD_FAILED', message: '保存文件失败' },
-    }, 500);
-  }
-});
-
 // Confirm upload after the browser has written the object to R2.
 uploadRouter.post('/confirm', authMiddleware, zValidator('json', confirmUploadSchema), async (c) => {
   const db = c.env.DB;
@@ -357,23 +299,6 @@ uploadRouter.post('/confirm', authMiddleware, zValidator('json', confirmUploadSc
           mediaId: result.id,
           key,
           url: `/media/${result.id}`,
-        },
-      });
-    }
-
-    // For local mode with base64 data, the record is already created in /local/:key
-    // Check if media already exists (local mode)
-    const existingMedia = await db.prepare(
-      'SELECT id FROM media WHERE url = ?'
-    ).bind(url).first();
-
-    if (existingMedia) {
-      return c.json({
-        success: true,
-        data: {
-          mediaId: existingMedia.id,
-          key,
-          url,
         },
       });
     }

@@ -41,6 +41,7 @@ export interface User {
   header_url: string;
   created_at: string;
   updated_at: string;
+  session_version: number;
 }
 
 export interface Post {
@@ -86,5 +87,6 @@ export interface PostWithRelations extends Post {
 export interface SessionData {
   userId: number;
   username: string;
+  sessionVersion: number;
   isLoggedIn: boolean;
 }

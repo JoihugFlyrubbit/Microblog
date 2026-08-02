@@ -34,7 +34,7 @@ function parseRange(rangeHeader: string | undefined, size: number): { offset: nu
 function mediaCacheControl(visibility: string | null): string {
   return visibility === 'public'
     ? 'public, max-age=31536000, immutable'
-    : 'private, max-age=3600';
+    : 'private, no-store';
 }
 
 // GET /media/:id?v=<version>

@@ -9,6 +9,9 @@ ALLOW_ADMIN_BOOTSTRAP = "true"
 ALLOWED_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
 SESSION_SAME_SITE = "lax"
 
+[triggers]
+crons = ["17 3 * * *"]
+
 # D1 Database binding (local development)
 [[d1_databases]]
 binding = "DB"
@@ -31,6 +34,9 @@ simple = { limit = 5, period = 60 }
 
 [env.production]
 vars = { ENVIRONMENT = "production", ALLOW_ADMIN_BOOTSTRAP = "false", ALLOWED_ORIGINS = "https://your-pages-site.pages.dev", SESSION_SAME_SITE = "lax" }
+
+[env.production.triggers]
+crons = ["17 3 * * *"]
 
 [[env.production.d1_databases]]
 binding = "DB"
