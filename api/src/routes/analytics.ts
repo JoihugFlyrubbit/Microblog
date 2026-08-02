@@ -1,11 +1,41 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { Env } from '../types';
+import { checkRateLimit, hasAllowedRequestOrigin, resolveRequestSource } from '../lib/request-security';
 
 export const analyticsRouter = new Hono<{ Bindings: Env }>();
 
 // Count one public-home mount as one page view. This stores aggregate daily PV only.
 analyticsRouter.post('/page-view', async (c) => {
+  if (!hasAllowedRequestOrigin(c.req.raw, c.env)) {
+    return c.json({
+      success: false,
+      error: { code: 'INVALID_ORIGIN', message: 'Origin is not allowed' },
+    }, 403);
+  }
+
+  const source = await resolveRequestSource(c.req.raw, c.env);
+  if (!source) {
+    return c.json({
+      success: false,
+      error: { code: 'SERVICE_UNAVAILABLE', message: 'Page-view counting is unavailable' },
+    }, 503);
+  }
+
+  const rateLimit = await checkRateLimit(c.env.ANALYTICS_RATE_LIMITER, source.rateLimitKey);
+  if (rateLimit === 'limited') {
+    return c.json({
+      success: false,
+      error: { code: 'RATE_LIMITED', message: 'Too many requests. Try again later.' },
+    }, 429, { 'Retry-After': '60' });
+  }
+  if (rateLimit === 'unavailable') {
+    return c.json({
+      success: false,
+      error: { code: 'SERVICE_UNAVAILABLE', message: 'Page-view counting is unavailable' },
+    }, 503);
+  }
+
   await c.env.DB.prepare(`
     INSERT INTO page_view_daily (view_date, views, updated_at)
     VALUES (DATE(datetime('now', '+8 hours')), 1, CURRENT_TIMESTAMP)

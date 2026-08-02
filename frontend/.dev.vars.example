@@ -1,0 +1,3 @@
+# Used only by `wrangler pages dev`; browser-side Next.js variables belong in .env.local.
+MICROBLOG_API_ORIGIN=http://localhost:8787
+PROXY_SHARED_SECRET=replace-with-the-same-random-32-plus-character-value-used-by-api

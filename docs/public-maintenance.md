@@ -15,6 +15,13 @@ Do not add real values for personal locations, private API hosts, Cloudflare
 resource IDs, LAN IPs, passwords, tokens, database exports, or Obsidian vault
 paths to tracked files.
 
+The Pages Function and API Worker share a runtime-only `PROXY_SHARED_SECRET` to
+authenticate the transient source used by endpoint rate limits. Keep the values
+identical, at least 32 characters, and outside git. If either runtime lacks it,
+protected requests through the Pages proxy fail safely: page-view counting stops
+without affecting static page delivery, and login returns a temporary service
+error before bcrypt or D1 login-log work.
+
 ## Files That Must Stay Private
 
 These files and directories are intentionally ignored:
@@ -80,6 +87,12 @@ Use this flow for future code changes:
 cd api && npm run typecheck
 cd ../frontend && npm run lint && npm run build
 ```
+
+When endpoint protection changes, also run an isolated Wrangler smoke with local
+D1 and Rate Limiting bindings. Confirm that rejected analytics requests do not
+increase `page_view_daily`, and that throttled login requests do not add
+`login_logs`. Never use production URLs or administrator credentials for this
+test.
 
 4. Stage only source changes, then run the public-safety scan:
 

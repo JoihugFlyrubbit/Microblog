@@ -87,10 +87,11 @@ QWEATHER_API_HOST=your-qweather-api-host
 5. Set API secrets:
 
 ```bash
-npx wrangler secret put SESSION_SECRET
-npx wrangler secret put QWEATHER_PRIVATE_KEY
-npx wrangler secret put QWEATHER_KEY_ID
-npx wrangler secret put QWEATHER_PROJECT_ID
+npx wrangler secret put SESSION_SECRET --env production
+npx wrangler secret put PROXY_SHARED_SECRET --env production
+npx wrangler secret put QWEATHER_PRIVATE_KEY --env production
+npx wrangler secret put QWEATHER_KEY_ID --env production
+npx wrangler secret put QWEATHER_PROJECT_ID --env production
 ```
 
 Weather and location variables are optional. Without them, weather/AQI/UV fields return unavailable values.
@@ -115,7 +116,20 @@ Build output: out
 Root directory: frontend
 Environment variable: NEXT_PUBLIC_SITE_URL=https://your-pages-site.pages.dev
 Runtime variable: MICROBLOG_API_ORIGIN=https://your-api.your-subdomain.workers.dev
+Runtime secret: PROXY_SHARED_SECRET=<same value as the API Worker secret>
 ```
+
+The Worker config includes separate short-window Rate Limiting bindings for
+page views and login attempts. `PROXY_SHARED_SECRET` authenticates the transient
+visitor source forwarded by the Pages Function; use the same random value of at
+least 32 characters on both runtimes and never expose it as `NEXT_PUBLIC_*`.
+Preview origins must be added explicitly to `ALLOWED_ORIGINS` if their page views
+or login form should work. Configure the Pages secret separately for each
+Production or Preview environment that should use these endpoints. The numeric
+Rate Limiting namespace IDs in `wrangler.toml` must remain unique among rate
+limiting bindings in the same Cloudflare account. See
+[`docs/endpoint-abuse-protection.md`](./docs/endpoint-abuse-protection.md) for
+failure behavior and optional custom-domain WAF guidance.
 
 ## Obsidian Sync
 

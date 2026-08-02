@@ -459,9 +459,8 @@ export const analyticsApi = {
     pageViewRecorded = true;
     try {
       await apiClient<Record<string, never>>('/analytics/page-view', { method: 'POST' });
-    } catch (error) {
-      pageViewRecorded = false;
-      throw error;
+    } catch {
+      // Page views are best-effort analytics and must never disturb the public UI.
     }
   },
 

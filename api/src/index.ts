@@ -13,31 +13,9 @@ import { exportRouter } from './routes/export';
 import { environmentRouter } from './routes/environment';
 import { mediaRouter } from './routes/media';
 import { analyticsRouter } from './routes/analytics';
+import { normalizeOrigin, parseAllowedOrigins } from './lib/request-security';
 
 const app = new Hono<{ Bindings: Env }>();
-
-function parseAllowedOrigins(env: Env) {
-  const configured = (env.ALLOWED_ORIGINS || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  const origins = new Set(configured);
-  if (env.ENVIRONMENT !== 'production') {
-    origins.add('http://localhost:3000');
-    origins.add('http://127.0.0.1:3000');
-  }
-  return origins;
-}
-
-function normalizeOrigin(origin: string | undefined) {
-  if (!origin) return '';
-  try {
-    return new URL(origin).origin;
-  } catch {
-    return '';
-  }
-}
 
 // Middleware
 app.use(logger());

@@ -33,9 +33,7 @@ export function PublicHome() {
 
   useEffect(() => {
     document.title = "Joi的Microblog";
-    analyticsApi.recordPageViewOnce().catch((error) => {
-      console.error("Failed to record page view:", error);
-    });
+    void analyticsApi.recordPageViewOnce();
   }, []);
 
   useEffect(() => {
