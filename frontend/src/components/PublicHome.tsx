@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { BackToTopButton } from "@/components/BackToTopButton";
 import { BrandMark } from "@/components/BrandMark";
 import { analyticsApi, Post } from "@/lib/api";
@@ -101,14 +102,14 @@ export function PublicHome() {
     <div className="min-h-screen">
       <header className={`glass-header sticky top-0 z-30 ${isScrolled ? "border-b border-[#d9dce4]/80" : "border-b border-transparent"}`}>
         <div className="shell grid grid-cols-[auto_1fr_auto] items-center gap-3 py-3 sm:grid-cols-[1fr_auto_1fr] sm:py-4">
-          <a
+          <Link
             href="/"
             className={`justify-self-start text-[1rem] font-medium tracking-[-0.03em] text-[#1f2430] transition-all duration-300 sm:text-[1.15rem] ${
               isScrolled ? "opacity-100" : "opacity-88"
             }`}
           >
             Home
-          </a>
+          </Link>
           <EnvironmentHeaderBadge />
           <a
             href="/login"
