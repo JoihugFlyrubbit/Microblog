@@ -67,6 +67,9 @@ scan_path() {
   base="$(basename "$path")"
 
   case "$path" in
+    api/wrangler.preview.toml|api/.preview-worker-secrets.local|api/.preview-production-refs.local|frontend/.preview-pages.local)
+      add_failure "$path: real Preview deployment configuration must stay out of git"
+      ;;
     */.env|*/.env.*|.env|.env.*)
       if ! is_example_path "$path"; then
         add_failure "$path: environment files must stay out of git"

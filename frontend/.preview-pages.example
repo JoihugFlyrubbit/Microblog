@@ -1,0 +1,7 @@
+# Copy to .preview-pages.local. The local copy is ignored by git.
+# PAGES_PREVIEW_ORIGIN is local preflight metadata; configure the other three
+# names in the Cloudflare Pages Preview environment.
+PAGES_PREVIEW_ORIGIN=https://preview-pages.example.invalid
+NEXT_PUBLIC_SITE_URL=https://preview-pages.example.invalid
+MICROBLOG_API_ORIGIN=https://preview-api.example.invalid
+PROXY_SHARED_SECRET=replace-with-the-same-random-value-used-by-preview-worker

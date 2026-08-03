@@ -1,0 +1,9 @@
+# Copy to .preview-production-refs.local. These are comparison-only production
+# coordinates, not secrets. The preflight never prints their values.
+PRODUCTION_WORKER_NAME=replace-with-production-worker-name
+PRODUCTION_D1_DATABASE_ID=replace-with-production-d1-database-id
+PRODUCTION_R2_BUCKET_NAME=replace-with-production-r2-bucket-name
+PRODUCTION_ANALYTICS_RATE_LIMIT_NAMESPACE_ID=replace-with-production-analytics-namespace-id
+PRODUCTION_LOGIN_RATE_LIMIT_NAMESPACE_ID=replace-with-production-login-namespace-id
+PRODUCTION_PAGES_ORIGIN=https://production-pages.example.invalid
+PRODUCTION_API_ORIGIN=https://production-api.example.invalid

@@ -128,6 +128,128 @@ are acceptable only when they are generic and not personally identifying.
 
 7. Commit only after the working tree contains source changes, not local data.
 
+## Isolated Preview configuration
+
+Preview deployments use a standalone Worker configuration. They do not inherit
+from `api/wrangler.toml`, and they must never substitute Production resources for
+missing Preview resources. The checked-in templates are deliberately unusable:
+
+- `api/wrangler.preview.toml.example`: Worker name, exact Pages Origin, D1, R2,
+  and two Rate Limit bindings.
+- `api/.preview-worker-secrets.example`: local secret-presence and equality
+  checks only.
+- `api/.preview-production-refs.example`: comparison-only Production resource
+  coordinates; it contains no secrets.
+- `frontend/.preview-pages.example`: Pages Preview build/runtime values and the
+  Pages copy of the shared secret.
+
+Create the ignored local files without placing their contents in chat or logs:
+
+```bash
+cp api/wrangler.preview.toml.example api/wrangler.preview.toml
+cp api/.preview-worker-secrets.example api/.preview-worker-secrets.local
+cp api/.preview-production-refs.example api/.preview-production-refs.local
+cp frontend/.preview-pages.example frontend/.preview-pages.local
+```
+
+Fill them locally. Real account IDs, resource IDs, bucket names, Worker/Pages
+domains, and secrets stay in these ignored files or in Cloudflare. Never commit
+them. The Production comparison file is required so the local gate can reject
+resource reuse without printing either side's value.
+
+The Preview Worker config must name an independent Preview/test D1 and an
+independent or explicitly test-safe R2 bucket. Its two account-wide Rate Limit
+namespace IDs must be different from each other and from both Production IDs:
+
+- `ANALYTICS_RATE_LIMITER`: 6 requests per 60 seconds.
+- `LOGIN_RATE_LIMITER`: 5 requests per 60 seconds.
+
+The local gate can compare IDs supplied in the private files, but it cannot
+prove account-wide uniqueness. A user must confirm in Cloudflare that neither
+Preview namespace ID is used by any other Worker binding in the account.
+
+Run the deterministic local gate from `api/`:
+
+```bash
+npm run preview:preflight
+```
+
+It exits nonzero for missing values, template placeholders, tracked private
+files, wrong Rate Limit settings, Preview/Production D1 or R2 reuse, namespace
+reuse, non-HTTPS or mismatched Origins, short secrets, or a Worker/Pages shared
+secret mismatch. It reports only presence, minimum-length compliance, equality,
+and isolation status; it never prints secret values, hashes, or fragments.
+
+The exact Pages Preview HTTPS Origin must be both `PAGES_PREVIEW_ORIGIN` /
+`NEXT_PUBLIC_SITE_URL` on the Pages side and the sole `ALLOWED_ORIGINS` value in
+the Preview Worker config. Wildcards and broad domain matches are forbidden.
+Set `MICROBLOG_API_ORIGIN` in the Pages Preview runtime to the exact Preview
+Worker HTTPS Origin, never the Production API Origin.
+
+Configure ordinary Pages Preview values in the Cloudflare Dashboard:
+
+- Build variable: `NEXT_PUBLIC_SITE_URL`.
+- Runtime variable: `MICROBLOG_API_ORIGIN` (used by the Pages Function).
+- Runtime secret: `PROXY_SHARED_SECRET`.
+- Build command: `npm run build`; output directory: `out`; root: `frontend`.
+- Node version: the version pinned by `frontend/.node-version`.
+
+`PAGES_PREVIEW_ORIGIN` is not consumed by application code; it exists in the
+ignored local file so preflight can compare the exact Pages Origin with Worker
+CORS. It need not be added to the deployed Pages runtime. `PROXY_SHARED_SECRET`
+must be a Preview-only value of at least 32 characters and identical in Pages
+and Worker. It is a secret, not a normal or `NEXT_PUBLIC_*` variable.
+
+Configure Worker secrets interactively, always naming the standalone config:
+
+```bash
+cd api
+npx wrangler secret put SESSION_SECRET --config wrangler.preview.toml
+npx wrangler secret put PROXY_SHARED_SECRET --config wrangler.preview.toml
+```
+
+Do not pass secrets on the command line or use `--secrets-file` with a tracked
+path. If Cloudflare authentication is unavailable, leave Dashboard/secret status
+as pending; local placeholder values do not prove a deployed secret exists.
+
+Every Worker Preview command must use the dedicated npm scripts below. These
+scripts run preflight and hard-code `--config wrangler.preview.toml`; do not use
+the generic `deploy` or `db:migrate` scripts for Preview:
+
+```bash
+cd api
+npm run preview:dry-run
+npm run preview:db:migrate
+npm run preview:deploy
+```
+
+`preview:dry-run` never publishes. The other two commands mutate the remote
+Preview environment and are reserved for a separately authorized F window.
+Before either remote command, confirm the active Cloudflare account and every
+binding in the Dashboard. Never add `--env production`, change the config path,
+or replace a missing Preview resource with a Production one.
+
+Use this order for the controlled Preview window:
+
+1. Run `preview:preflight` against the ignored local files.
+2. Confirm Cloudflare authentication, account-wide namespace uniqueness, and
+   Worker/Pages/D1/R2 ownership and isolation in the Dashboard.
+3. Create and record a recovery point for the Preview/test D1 only.
+4. Apply migrations only to the `DB` binding in `wrangler.preview.toml` with
+   `preview:db:migrate`.
+5. Deploy the Preview Worker with `preview:deploy`.
+6. Verify Worker health, exact CORS allow/reject behavior, login, both Rate Limit
+   bindings, D1/R2 bindings, secrets, and Cron without querying Production.
+7. Deploy Pages to its Preview environment with the reviewed Preview variables
+   and secret; do not promote that deployment to Production.
+8. Complete trusted HTTPS browser acceptance against the exact Preview Pages
+   Origin.
+
+Stop before migration or deployment if any local check fails, Cloudflare cannot
+prove isolation, the D1 recovery point is missing, or either deployed secret is
+unconfirmed. A successful local preflight is necessary but does not itself
+approve migration, deployment, or Production access.
+
 ## Password Rotation
 
 The admin password is stored in D1 as a bcrypt hash in `users.password_hash`.
