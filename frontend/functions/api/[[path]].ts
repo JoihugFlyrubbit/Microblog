@@ -34,7 +34,10 @@ function secureResponse(response: Response, request?: Request, upstreamPath = '/
   for (const [name, value] of Object.entries(API_SECURITY_HEADERS)) {
     headers.set(name, value);
   }
-  if (headers.has('Set-Cookie') || (request && isSensitiveRequest(request, upstreamPath))) {
+  const isMediaResponse = upstreamPath.startsWith('/media/');
+  const hasExplicitMediaCachePolicy = isMediaResponse && headers.has('Cache-Control');
+  if ((isMediaResponse && response.status >= 400)
+    || (!hasExplicitMediaCachePolicy && (headers.has('Set-Cookie') || (request && isSensitiveRequest(request, upstreamPath))))) {
     headers.set('Cache-Control', 'no-store');
   }
   return new Response(response.body, {

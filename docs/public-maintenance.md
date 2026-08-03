@@ -169,6 +169,20 @@ current device. Deploying the migration also invalidates cookies issued before
 the field existed, so users sign in once after deployment. Cookies remain
 Secure in production, HttpOnly, SameSite=Lax, and use the 30-day rolling expiry.
 
+Anonymous tag responses expose only tags used by public posts. Their
+`category_id` is `null`, `categories` is empty, and the compatibility
+`collapsedLimit` is the non-sensitive default. Category names, ordering,
+per-category display limits, empty categories, and private-only relationships
+are available only to authenticated administration requests.
+
+Successful public media responses remain cacheable for one year and immutable.
+Successful private or orphan media responses use `private, no-store`. Every
+media error or rejection, including invalid IDs and ranges, missing records or
+objects, authorization failures, and corrupt or unsupported storage data, uses
+`Cache-Control: no-store`. The Worker and Pages proxy preserve these explicit
+route-level media policies instead of replacing them merely because the request
+contains a Session Cookie.
+
 Security login logs contain only a truncated request source (64 characters), a
 truncated User-Agent (512 characters), success status, and timestamp. They do
 not contain request bodies, passwords, cookies, or proxy signatures. A daily

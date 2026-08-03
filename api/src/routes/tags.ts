@@ -135,12 +135,12 @@ tagsRouter.get('/', optionalAuthMiddleware, async (c) => {
 
   try {
     const visibilityFilter = includePrivate ? '' : "AND p.visibility = 'public'";
-    const [tags, categories, settings] = await Promise.all([
-      db.prepare(`
+    const categoryColumn = isAuthenticated ? 't.category_id' : 'NULL AS category_id';
+    const tagsPromise = db.prepare(`
         SELECT
           t.id,
           t.name,
-          t.category_id,
+          ${categoryColumn},
           t.created_at,
           COUNT(DISTINCT p.id) AS post_count,
           MAX(CASE WHEN p.id IS NOT NULL THEN pt.created_at END) AS last_used_at
@@ -150,7 +150,22 @@ tagsRouter.get('/', optionalAuthMiddleware, async (c) => {
         GROUP BY t.id
         HAVING post_count > 0
         ORDER BY last_used_at DESC, post_count DESC, t.name ASC
-      `).all(),
+      `).all();
+
+    if (!isAuthenticated) {
+      const tags = await tagsPromise;
+      return c.json({
+        success: true,
+        data: {
+          tags: tags.results,
+          categories: [],
+          collapsedLimit: 8,
+        },
+      });
+    }
+
+    const [tags, categories, settings] = await Promise.all([
+      tagsPromise,
       getCategories(db),
       db.prepare('SELECT collapsed_limit FROM tag_display_settings WHERE id = 1')
         .first<{ collapsed_limit: number }>(),

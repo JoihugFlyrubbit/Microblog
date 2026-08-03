@@ -35,7 +35,10 @@ export function applyApiSecurityHeaders(response: Response, request?: Request) {
     headers.set(name, value);
   }
 
-  if (headers.has('Set-Cookie') || (request && isSensitiveRequest(request))) {
+  const isMediaResponse = request && new URL(request.url).pathname.startsWith('/media/');
+  const hasExplicitMediaCachePolicy = Boolean(isMediaResponse && headers.has('Cache-Control'));
+  if ((isMediaResponse && response.status >= 400)
+    || (!hasExplicitMediaCachePolicy && (headers.has('Set-Cookie') || (request && isSensitiveRequest(request))))) {
     headers.set('Cache-Control', 'no-store');
   }
 
