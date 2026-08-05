@@ -70,6 +70,54 @@ Do not place database exports under tracked docs or commit them to the public
 repository. R2 object backup/export should also use private local storage or a
 private bucket, not this repo.
 
+### D1 migration history
+
+A new empty D1 database must be initialized only through the ordered files in
+`api/migrations/`. Do not execute the current `api/src/db/schema.sql` first and
+then apply migrations: the schema file already includes columns added by later
+migrations, so doing both would repeat `ALTER TABLE ... ADD COLUMN` operations.
+The schema file is the current-structure reference used for metadata comparison;
+it is not migration history and does not replace `d1_migrations`.
+
+Existing databases depend on their exact `d1_migrations` records. Before any
+Production migration, make a backup or D1 Time Travel bookmark and perform a
+read-only review of both the application schema and migration names. Run the
+guard before Wrangler applies migrations:
+
+```bash
+cd api
+node ../scripts/d1-migration-guard.mjs DB --remote --env production
+npx wrangler d1 migrations apply DB --remote --env production
+```
+
+The dedicated Preview command runs the same guard automatically after Preview
+preflight and before migration. The guard allows an empty database, the complete
+legacy base schema with no incremental migrations, and consistent partial or
+complete migration history. It refuses incomplete base tables, recorded
+migrations whose required structure is absent, and incremental structure whose
+matching record is missing.
+
+If a database already has current final structure but `d1_migrations` is absent
+or incomplete, stop. Do not run the migration command, guess that files were
+previously applied, silently insert migration records, or rebuild user tables.
+Preserve the backup/bookmark; export a read-only schema and migration-name list;
+compare every table, column, constraint, foreign key, index, and singleton row
+against the reviewed chain in an isolated database; then prepare a separately
+reviewed, database-specific adoption procedure. The generic guard deliberately
+does not adopt such a database.
+
+Preview must pass the complete migration test and controlled Preview migration
+before any new migration is applied to Production. Run the local test with:
+
+```bash
+cd api
+npm run db:migrations:test
+```
+
+The test uses the installed Wrangler in local mode, stores all D1 state under a
+temporary directory, uses only synthetic records, verifies legacy and partial
+upgrade paths, and cleans its isolated state. It never uses `--remote`.
+
 ## Change Workflow
 
 Use this flow for future code changes:

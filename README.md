@@ -96,11 +96,19 @@ npx wrangler secret put QWEATHER_PROJECT_ID --env production
 
 Weather and location variables are optional. Without them, weather/AQI/UV fields return unavailable values.
 
-6. Initialize the database schema:
+6. Initialize or migrate the database through the ordered migration chain:
 
 ```bash
-npx wrangler d1 execute microblog-db --remote --file src/db/schema.sql
+node ../scripts/d1-migration-guard.mjs DB --remote --env production
+npx wrangler d1 migrations apply DB --remote --env production
 ```
+
+Do not apply `src/db/schema.sql` before migrations. It describes the current
+schema for inspection and local comparison; it is not a replacement for
+migration history. Back up an existing D1 database and review its schema and
+`d1_migrations` records before applying migrations. See
+[`docs/public-maintenance.md`](./docs/public-maintenance.md) for the required
+stop condition when current structure exists without matching history.
 
 7. Deploy the API:
 

@@ -5,7 +5,6 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    session_version INTEGER NOT NULL DEFAULT 0,
     nickname TEXT DEFAULT 'My Blog',
     bio TEXT DEFAULT '',
     email TEXT DEFAULT '',
@@ -13,7 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_url TEXT DEFAULT '/default-avatar.png',
     header_url TEXT DEFAULT '/default-header.png',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    session_version INTEGER NOT NULL DEFAULT 0
 );
 
 -- Posts table
@@ -66,9 +66,9 @@ CREATE TABLE IF NOT EXISTS tag_categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    collapsed_limit INTEGER NOT NULL DEFAULT 8 CHECK (collapsed_limit BETWEEN 4 AND 20),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    collapsed_limit INTEGER NOT NULL DEFAULT 8 CHECK (collapsed_limit BETWEEN 4 AND 20)
 );
 
 CREATE INDEX idx_tag_categories_sort_order ON tag_categories(sort_order);
@@ -77,8 +77,8 @@ CREATE INDEX idx_tag_categories_sort_order ON tag_categories(sort_order);
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
-    category_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    category_id INTEGER,
     FOREIGN KEY (category_id) REFERENCES tag_categories(id) ON DELETE SET NULL
 );
 
