@@ -6,12 +6,16 @@ function sessionSameSite(env: Env): 'lax' | 'strict' | 'none' {
   return env.SESSION_SAME_SITE || 'lax';
 }
 
+export function shouldUseSecureSessionCookie(environment?: string): boolean {
+  return environment !== 'development';
+}
+
 export const getSessionOptions = (env: Env): SessionOptions => ({
   password: env.SESSION_SECRET,
   cookieName: 'microblog_session',
   ttl: 60 * 60 * 24 * 30,
   cookieOptions: {
-    secure: env.ENVIRONMENT === 'production',
+    secure: shouldUseSecureSessionCookie(env.ENVIRONMENT),
     sameSite: sessionSameSite(env),
     httpOnly: true,
     path: '/',

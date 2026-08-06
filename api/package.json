@@ -12,6 +12,7 @@
     "preview:db:migrate": "npm run preview:preflight && node ../scripts/d1-migration-guard.mjs DB --remote --config wrangler.preview.toml && wrangler d1 migrations apply DB --remote --config wrangler.preview.toml",
     "preview:deploy": "npm run preview:preflight && wrangler deploy --config wrangler.preview.toml",
     "db:migrations:test": "node ../scripts/d1-migrations.test.mjs",
+    "test:session-cookie": "node --test test/auth-cookie-options.test.cjs",
     "db:create": "wrangler d1 create microblog-db",
     "db:migrate": "wrangler d1 migrations apply microblog-db",
     "db:generate": "wrangler d1 migrations create microblog-db init",
