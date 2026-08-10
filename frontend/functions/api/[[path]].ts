@@ -36,7 +36,9 @@ function secureResponse(response: Response, request?: Request, upstreamPath = '/
   }
   const isMediaResponse = upstreamPath.startsWith('/media/');
   const hasExplicitMediaCachePolicy = isMediaResponse && headers.has('Cache-Control');
-  if ((isMediaResponse && response.status >= 400)
+  if (response.status === 401
+    || response.status === 403
+    || (isMediaResponse && response.status >= 400)
     || (!hasExplicitMediaCachePolicy && (headers.has('Set-Cookie') || (request && isSensitiveRequest(request, upstreamPath))))) {
     headers.set('Cache-Control', 'no-store');
   }
