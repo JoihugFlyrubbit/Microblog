@@ -12,6 +12,8 @@ import { PostForm } from "@/components/PostForm";
 import { PostList } from "@/components/PostList";
 import { PinnedPosts } from "@/components/PinnedPosts";
 import { TagCloud } from "@/components/TagCloud";
+import { ViewStatsCard } from "@/components/ViewStatsCard";
+import { TagManagerModal } from "@/components/TagManagerModal";
 
 type Filters = {
   selectedDate?: string;
@@ -26,6 +28,7 @@ export function AdminHome() {
   const [selectedPostId, setSelectedPostId] = useState<number | null>(null);
   const [editingOnOpen, setEditingOnOpen] = useState(false);
   const [showPostForm, setShowPostForm] = useState(false);
+  const [showTagManager, setShowTagManager] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isScrolled, setIsScrolled] = useState(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -194,12 +197,20 @@ export function AdminHome() {
       <main className="safe-bottom-pad pb-24 pt-6 sm:pt-10">
         <section className="shell space-y-6">
           {!showPostForm && (
-            <button
-              onClick={() => setShowPostForm(true)}
-              className="surface-card-soft w-full border border-dashed border-white/90 py-4 text-base font-semibold text-[#1f2430] hover:text-[#64b7ea]"
-            >
-              + 发布新动态
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowPostForm(true)}
+                className="surface-card-soft min-w-0 flex-1 border border-dashed border-white/90 py-4 text-base font-semibold text-[#1f2430] hover:text-[#64b7ea]"
+              >
+                + 发布新动态
+              </button>
+              <button
+                onClick={() => setShowTagManager(true)}
+                className="surface-card-soft px-4 py-4 text-sm font-semibold text-[#5d8fd6] sm:px-6"
+              >
+                标签管理
+              </button>
+            </div>
           )}
 
           <div
@@ -242,6 +253,9 @@ export function AdminHome() {
                   />
                 </div>
                 <div className="surface-card animate-rise-in p-5 transition-shadow duration-200 hover:shadow-[0_24px_42px_rgba(83,84,92,0.16)]" style={{ animationDelay: "140ms" }}>
+                  <ViewStatsCard />
+                </div>
+                <div className="surface-card animate-rise-in p-5 transition-shadow duration-200 hover:shadow-[0_24px_42px_rgba(83,84,92,0.16)]" style={{ animationDelay: "180ms" }}>
                   <ExportButton />
                 </div>
               </div>
@@ -282,6 +296,15 @@ export function AdminHome() {
                     includePrivate
                     refreshKey={refreshKey}
                   />
+                </div>
+              </details>
+              <details className="mobile-panel">
+                <summary className="mobile-panel-summary">
+                  <span>浏览量</span>
+                  <span className="text-xs text-soft">仅管理员可见</span>
+                </summary>
+                <div className="mobile-panel-body">
+                  <ViewStatsCard />
                 </div>
               </details>
               <details className="mobile-panel">
@@ -346,6 +369,13 @@ export function AdminHome() {
           onTagClick={handlePostTagClick}
           canManage
           initialEditing={editingOnOpen}
+        />
+      )}
+
+      {showTagManager && (
+        <TagManagerModal
+          onClose={() => setShowTagManager(false)}
+          onChanged={() => setRefreshKey((value) => value + 1)}
         />
       )}
     </div>

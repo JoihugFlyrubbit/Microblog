@@ -87,19 +87,28 @@ QWEATHER_API_HOST=your-qweather-api-host
 5. Set API secrets:
 
 ```bash
-npx wrangler secret put SESSION_SECRET
-npx wrangler secret put QWEATHER_PRIVATE_KEY
-npx wrangler secret put QWEATHER_KEY_ID
-npx wrangler secret put QWEATHER_PROJECT_ID
+npx wrangler secret put SESSION_SECRET --env production
+npx wrangler secret put PROXY_SHARED_SECRET --env production
+npx wrangler secret put QWEATHER_PRIVATE_KEY --env production
+npx wrangler secret put QWEATHER_KEY_ID --env production
+npx wrangler secret put QWEATHER_PROJECT_ID --env production
 ```
 
 Weather and location variables are optional. Without them, weather/AQI/UV fields return unavailable values.
 
-6. Initialize the database schema:
+6. Initialize or migrate the database through the ordered migration chain:
 
 ```bash
-npx wrangler d1 execute microblog-db --remote --file src/db/schema.sql
+node ../scripts/d1-migration-guard.mjs DB --remote --env production
+npx wrangler d1 migrations apply DB --remote --env production
 ```
+
+Do not apply `src/db/schema.sql` before migrations. It describes the current
+schema for inspection and local comparison; it is not a replacement for
+migration history. Back up an existing D1 database and review its schema and
+`d1_migrations` records before applying migrations. See
+[`docs/public-maintenance.md`](./docs/public-maintenance.md) for the required
+stop condition when current structure exists without matching history.
 
 7. Deploy the API:
 
@@ -115,7 +124,20 @@ Build output: out
 Root directory: frontend
 Environment variable: NEXT_PUBLIC_SITE_URL=https://your-pages-site.pages.dev
 Runtime variable: MICROBLOG_API_ORIGIN=https://your-api.your-subdomain.workers.dev
+Runtime secret: PROXY_SHARED_SECRET=<same value as the API Worker secret>
 ```
+
+The Worker config includes separate short-window Rate Limiting bindings for
+page views and login attempts. `PROXY_SHARED_SECRET` authenticates the transient
+visitor source forwarded by the Pages Function; use the same random value of at
+least 32 characters on both runtimes and never expose it as `NEXT_PUBLIC_*`.
+Preview origins must be added explicitly to `ALLOWED_ORIGINS` if their page views
+or login form should work. Configure the Pages secret separately for each
+Production or Preview environment that should use these endpoints. The numeric
+Rate Limiting namespace IDs in `wrangler.toml` must remain unique among rate
+limiting bindings in the same Cloudflare account. See
+[`docs/endpoint-abuse-protection.md`](./docs/endpoint-abuse-protection.md) for
+failure behavior and optional custom-domain WAF guidance.
 
 ## Obsidian Sync
 
@@ -137,6 +159,26 @@ Remote D1/R2 mode, useful when local Node cannot reliably reach `*.workers.dev`:
 ```bash
 node sync-remote-d1.js --watch
 ```
+
+For a macOS LaunchAgent, you can optionally provide a stable Cloudflare token in:
+
+```bash
+~/Claude/secrets/microblog-sync.env
+```
+
+Example:
+
+```bash
+export CLOUDFLARE_API_TOKEN=your_token_here
+```
+
+If the watcher enters a failure state or recovers, it writes health state to:
+
+```bash
+~/Library/Logs/microblog-obsidian-sync.state.json
+```
+
+and shows a local macOS notification.
 
 `sync.config.json` is ignored by git because it contains local paths and the admin password.
 

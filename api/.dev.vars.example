@@ -2,6 +2,7 @@
 SESSION_SECRET=your-session-secret-min-32-characters-long
 ALLOW_ADMIN_BOOTSTRAP=true
 ALLOWED_ORIGINS=http://localhost:3000
+PROXY_SHARED_SECRET=replace-with-the-same-random-32-plus-character-value-used-by-pages
 SESSION_SAME_SITE=lax
 ENV_LOCATION_LABEL=Your Location
 ENV_LATITUDE=0

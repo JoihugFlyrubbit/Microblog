@@ -15,6 +15,13 @@ Do not add real values for personal locations, private API hosts, Cloudflare
 resource IDs, LAN IPs, passwords, tokens, database exports, or Obsidian vault
 paths to tracked files.
 
+The Pages Function and API Worker share a runtime-only `PROXY_SHARED_SECRET` to
+authenticate the transient source used by endpoint rate limits. Keep the values
+identical, at least 32 characters, and outside git. If either runtime lacks it,
+protected requests through the Pages proxy fail safely: page-view counting stops
+without affecting static page delivery, and login returns a temporary service
+error before bcrypt or D1 login-log work.
+
 ## Files That Must Stay Private
 
 These files and directories are intentionally ignored:
@@ -63,6 +70,54 @@ Do not place database exports under tracked docs or commit them to the public
 repository. R2 object backup/export should also use private local storage or a
 private bucket, not this repo.
 
+### D1 migration history
+
+A new empty D1 database must be initialized only through the ordered files in
+`api/migrations/`. Do not execute the current `api/src/db/schema.sql` first and
+then apply migrations: the schema file already includes columns added by later
+migrations, so doing both would repeat `ALTER TABLE ... ADD COLUMN` operations.
+The schema file is the current-structure reference used for metadata comparison;
+it is not migration history and does not replace `d1_migrations`.
+
+Existing databases depend on their exact `d1_migrations` records. Before any
+Production migration, make a backup or D1 Time Travel bookmark and perform a
+read-only review of both the application schema and migration names. Run the
+guard before Wrangler applies migrations:
+
+```bash
+cd api
+node ../scripts/d1-migration-guard.mjs DB --remote --env production
+npx wrangler d1 migrations apply DB --remote --env production
+```
+
+The dedicated Preview command runs the same guard automatically after Preview
+preflight and before migration. The guard allows an empty database, the complete
+legacy base schema with no incremental migrations, and consistent partial or
+complete migration history. It refuses incomplete base tables, recorded
+migrations whose required structure is absent, and incremental structure whose
+matching record is missing.
+
+If a database already has current final structure but `d1_migrations` is absent
+or incomplete, stop. Do not run the migration command, guess that files were
+previously applied, silently insert migration records, or rebuild user tables.
+Preserve the backup/bookmark; export a read-only schema and migration-name list;
+compare every table, column, constraint, foreign key, index, and singleton row
+against the reviewed chain in an isolated database; then prepare a separately
+reviewed, database-specific adoption procedure. The generic guard deliberately
+does not adopt such a database.
+
+Preview must pass the complete migration test and controlled Preview migration
+before any new migration is applied to Production. Run the local test with:
+
+```bash
+cd api
+npm run db:migrations:test
+```
+
+The test uses the installed Wrangler in local mode, stores all D1 state under a
+temporary directory, uses only synthetic records, verifies legacy and partial
+upgrade paths, and cleans its isolated state. It never uses `--remote`.
+
 ## Change Workflow
 
 Use this flow for future code changes:
@@ -81,6 +136,12 @@ cd api && npm run typecheck
 cd ../frontend && npm run lint && npm run build
 ```
 
+When endpoint protection changes, also run an isolated Wrangler smoke with local
+D1 and Rate Limiting bindings. Confirm that rejected analytics requests do not
+increase `page_view_daily`, and that throttled login requests do not add
+`login_logs`. Never use production URLs or administrator credentials for this
+test.
+
 4. Stage only source changes, then run the public-safety scan:
 
 ```bash
@@ -91,10 +152,9 @@ The pre-commit hook runs the same staged scan automatically. GitHub Actions runs
 the full tracked-file scan plus API/frontend validation on pushes and pull
 requests.
 
-An additional GitHub Actions secret scanner runs in advisory mode first. It is
-intended to catch unknown secret formats before they become required checks.
-Once its false positive rate is understood, promote it to a required status
-check in the repository ruleset.
+The Gitleaks GitHub Actions job scans full checkout history and fails when it
+finds a suspected secret. Its Action and scanner versions are pinned. Review
+findings narrowly; never add a broad allowlist merely to make the job green.
 
 5. Scan the staged diff:
 
@@ -115,6 +175,128 @@ Review any failure before committing. Placeholders and documentation examples
 are acceptable only when they are generic and not personally identifying.
 
 7. Commit only after the working tree contains source changes, not local data.
+
+## Isolated Preview configuration
+
+Preview deployments use a standalone Worker configuration. They do not inherit
+from `api/wrangler.toml`, and they must never substitute Production resources for
+missing Preview resources. The checked-in templates are deliberately unusable:
+
+- `api/wrangler.preview.toml.example`: Worker name, exact Pages Origin, D1, R2,
+  and two Rate Limit bindings.
+- `api/.preview-worker-secrets.example`: local secret-presence and equality
+  checks only.
+- `api/.preview-production-refs.example`: comparison-only Production resource
+  coordinates; it contains no secrets.
+- `frontend/.preview-pages.example`: Pages Preview build/runtime values and the
+  Pages copy of the shared secret.
+
+Create the ignored local files without placing their contents in chat or logs:
+
+```bash
+cp api/wrangler.preview.toml.example api/wrangler.preview.toml
+cp api/.preview-worker-secrets.example api/.preview-worker-secrets.local
+cp api/.preview-production-refs.example api/.preview-production-refs.local
+cp frontend/.preview-pages.example frontend/.preview-pages.local
+```
+
+Fill them locally. Real account IDs, resource IDs, bucket names, Worker/Pages
+domains, and secrets stay in these ignored files or in Cloudflare. Never commit
+them. The Production comparison file is required so the local gate can reject
+resource reuse without printing either side's value.
+
+The Preview Worker config must name an independent Preview/test D1 and an
+independent or explicitly test-safe R2 bucket. Its two account-wide Rate Limit
+namespace IDs must be different from each other and from both Production IDs:
+
+- `ANALYTICS_RATE_LIMITER`: 6 requests per 60 seconds.
+- `LOGIN_RATE_LIMITER`: 5 requests per 60 seconds.
+
+The local gate can compare IDs supplied in the private files, but it cannot
+prove account-wide uniqueness. A user must confirm in Cloudflare that neither
+Preview namespace ID is used by any other Worker binding in the account.
+
+Run the deterministic local gate from `api/`:
+
+```bash
+npm run preview:preflight
+```
+
+It exits nonzero for missing values, template placeholders, tracked private
+files, wrong Rate Limit settings, Preview/Production D1 or R2 reuse, namespace
+reuse, non-HTTPS or mismatched Origins, short secrets, or a Worker/Pages shared
+secret mismatch. It reports only presence, minimum-length compliance, equality,
+and isolation status; it never prints secret values, hashes, or fragments.
+
+The exact Pages Preview HTTPS Origin must be both `PAGES_PREVIEW_ORIGIN` /
+`NEXT_PUBLIC_SITE_URL` on the Pages side and the sole `ALLOWED_ORIGINS` value in
+the Preview Worker config. Wildcards and broad domain matches are forbidden.
+Set `MICROBLOG_API_ORIGIN` in the Pages Preview runtime to the exact Preview
+Worker HTTPS Origin, never the Production API Origin.
+
+Configure ordinary Pages Preview values in the Cloudflare Dashboard:
+
+- Build variable: `NEXT_PUBLIC_SITE_URL`.
+- Runtime variable: `MICROBLOG_API_ORIGIN` (used by the Pages Function).
+- Runtime secret: `PROXY_SHARED_SECRET`.
+- Build command: `npm run build`; output directory: `out`; root: `frontend`.
+- Node version: the version pinned by `frontend/.node-version`.
+
+`PAGES_PREVIEW_ORIGIN` is not consumed by application code; it exists in the
+ignored local file so preflight can compare the exact Pages Origin with Worker
+CORS. It need not be added to the deployed Pages runtime. `PROXY_SHARED_SECRET`
+must be a Preview-only value of at least 32 characters and identical in Pages
+and Worker. It is a secret, not a normal or `NEXT_PUBLIC_*` variable.
+
+Configure Worker secrets interactively, always naming the standalone config:
+
+```bash
+cd api
+npx wrangler secret put SESSION_SECRET --config wrangler.preview.toml
+npx wrangler secret put PROXY_SHARED_SECRET --config wrangler.preview.toml
+```
+
+Do not pass secrets on the command line or use `--secrets-file` with a tracked
+path. If Cloudflare authentication is unavailable, leave Dashboard/secret status
+as pending; local placeholder values do not prove a deployed secret exists.
+
+Every Worker Preview command must use the dedicated npm scripts below. These
+scripts run preflight and hard-code `--config wrangler.preview.toml`; do not use
+the generic `deploy` or `db:migrate` scripts for Preview:
+
+```bash
+cd api
+npm run preview:dry-run
+npm run preview:db:migrate
+npm run preview:deploy
+```
+
+`preview:dry-run` never publishes. The other two commands mutate the remote
+Preview environment and are reserved for a separately authorized F window.
+Before either remote command, confirm the active Cloudflare account and every
+binding in the Dashboard. Never add `--env production`, change the config path,
+or replace a missing Preview resource with a Production one.
+
+Use this order for the controlled Preview window:
+
+1. Run `preview:preflight` against the ignored local files.
+2. Confirm Cloudflare authentication, account-wide namespace uniqueness, and
+   Worker/Pages/D1/R2 ownership and isolation in the Dashboard.
+3. Create and record a recovery point for the Preview/test D1 only.
+4. Apply migrations only to the `DB` binding in `wrangler.preview.toml` with
+   `preview:db:migrate`.
+5. Deploy the Preview Worker with `preview:deploy`.
+6. Verify Worker health, exact CORS allow/reject behavior, login, both Rate Limit
+   bindings, D1/R2 bindings, secrets, and Cron without querying Production.
+7. Deploy Pages to its Preview environment with the reviewed Preview variables
+   and secret; do not promote that deployment to Production.
+8. Complete trusted HTTPS browser acceptance against the exact Preview Pages
+   Origin.
+
+Stop before migration or deployment if any local check fails, Cloudflare cannot
+prove isolation, the D1 recovery point is missing, or either deployed secret is
+unconfirmed. A successful local preflight is necessary but does not itself
+approve migration, deployment, or Production access.
 
 ## Password Rotation
 
@@ -139,6 +321,43 @@ For production, browser requests should go to the Cloudflare Pages HTTPS site
 and use the same-origin `/api` proxy. In that deployment shape, the password is
 sent over HTTPS to Cloudflare, not as plaintext over the network. The login input
 is a password field so it is not displayed on screen while typing.
+
+## Response and session security
+
+Cloudflare Pages reads `frontend/public/_headers` for static responses. Pages
+Functions do not inherit that file, so the `/api` proxy and API Worker attach
+their own API-specific security headers. The static CSP permits same-origin
+assets and API requests plus `data:`/`blob:` images and media. Next.js static
+export currently emits hydration scripts and runtime style attributes, so
+`script-src 'unsafe-inline'` and `style-src 'unsafe-inline'` remain documented
+exceptions. Removing either requires a separate build-time hash or nonce design
+and browser regression testing.
+
+Sessions include the user's integer `session_version`. Changing the password
+increments that value and revokes every previously issued cookie, including the
+current device. Deploying the migration also invalidates cookies issued before
+the field existed, so users sign in once after deployment. Cookies remain
+Secure in production, HttpOnly, SameSite=Lax, and use the 30-day rolling expiry.
+
+Anonymous tag responses expose only tags used by public posts. Their
+`category_id` is `null`, `categories` is empty, and the compatibility
+`collapsedLimit` is the non-sensitive default. Category names, ordering,
+per-category display limits, empty categories, and private-only relationships
+are available only to authenticated administration requests.
+
+Successful public media responses remain cacheable for one year and immutable.
+Successful private or orphan media responses use `private, no-store`. Every
+media error or rejection, including invalid IDs and ranges, missing records or
+objects, authorization failures, and corrupt or unsupported storage data, uses
+`Cache-Control: no-store`. The Worker and Pages proxy preserve these explicit
+route-level media policies instead of replacing them merely because the request
+contains a Session Cookie.
+
+Security login logs contain only a truncated request source (64 characters), a
+truncated User-Agent (512 characters), success status, and timestamp. They do
+not contain request bodies, passwords, cookies, or proxy signatures. A daily
+Worker Cron Trigger deletes rows older than 90 days. Cleanup failures are logged
+without exposing a public cleanup endpoint or interrupting page requests.
 
 ## Public Release Check
 

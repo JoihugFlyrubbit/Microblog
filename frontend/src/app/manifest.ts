@@ -1,11 +1,14 @@
 import type { MetadataRoute } from "next";
 
+export const dynamic = "force-static";
+
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Joi 的 Microblog",
     short_name: "Microblog",
     description: "单用户个人微博系统",
-    start_url: "/",
+    id: "/",
+    start_url: "/admin",
     scope: "/",
     display: "standalone",
     orientation: "portrait",

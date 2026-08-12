@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
+    session_version INTEGER NOT NULL DEFAULT 0,
     nickname TEXT DEFAULT 'My Blog',
     bio TEXT DEFAULT '',
     email TEXT DEFAULT '',
@@ -54,14 +55,29 @@ CREATE TABLE IF NOT EXISTS media (
 
 CREATE INDEX IF NOT EXISTS idx_media_post_id ON media(post_id);
 
+-- Tag categories table
+CREATE TABLE IF NOT EXISTS tag_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    collapsed_limit INTEGER NOT NULL DEFAULT 8 CHECK (collapsed_limit BETWEEN 4 AND 20),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_tag_categories_sort_order ON tag_categories(sort_order);
+
 -- Tags table
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    category_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES tag_categories(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
+CREATE INDEX IF NOT EXISTS idx_tags_category_id ON tags(category_id);
 
 -- Post-Tag junction table
 CREATE TABLE IF NOT EXISTS post_tags (
@@ -86,6 +102,22 @@ CREATE TABLE IF NOT EXISTS login_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_login_logs_created_at ON login_logs(created_at);
+
+-- Global tag display settings (single row).
+CREATE TABLE IF NOT EXISTS tag_display_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    collapsed_limit INTEGER NOT NULL DEFAULT 8 CHECK (collapsed_limit BETWEEN 4 AND 20),
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR IGNORE INTO tag_display_settings (id, collapsed_limit) VALUES (1, 8);
+
+-- Privacy-preserving aggregate page views. No visitor identifiers are stored.
+CREATE TABLE IF NOT EXISTS page_view_daily (
+    view_date TEXT PRIMARY KEY,
+    views INTEGER NOT NULL DEFAULT 0,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 
 -- Composite indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_posts_created_at_visibility ON posts(created_at, visibility);

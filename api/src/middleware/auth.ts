@@ -3,19 +3,45 @@ import { getIronSession, SessionOptions } from 'iron-session';
 import { Env, SessionData } from '../types';
 
 function sessionSameSite(env: Env): 'lax' | 'strict' | 'none' {
-  return env.SESSION_SAME_SITE || (env.ENVIRONMENT === 'production' ? 'none' : 'lax');
+  return env.SESSION_SAME_SITE || 'lax';
+}
+
+export function shouldUseSecureSessionCookie(environment?: string): boolean {
+  return environment !== 'development';
 }
 
 export const getSessionOptions = (env: Env): SessionOptions => ({
   password: env.SESSION_SECRET,
   cookieName: 'microblog_session',
+  ttl: 60 * 60 * 24 * 30,
   cookieOptions: {
-    secure: env.ENVIRONMENT === 'production',
+    secure: shouldUseSecureSessionCookie(env.ENVIRONMENT),
     sameSite: sessionSameSite(env),
     httpOnly: true,
-    maxAge: 60 * 60 * 24 * 7, // 7 days
+    path: '/',
+    maxAge: 60 * 60 * 24 * 30 - 60,
   },
 });
+
+type SessionUser = {
+  id: number;
+  username: string;
+  session_version: number;
+};
+
+export async function getValidSessionUser(env: Env, session: SessionData) {
+  if (!session.isLoggedIn || !Number.isInteger(session.sessionVersion)) return null;
+
+  const user = await env.DB.prepare(
+    'SELECT id, username, session_version FROM users WHERE id = ?'
+  ).bind(session.userId).first<SessionUser>();
+
+  if (!user || user.username !== session.username || user.session_version !== session.sessionVersion) {
+    return null;
+  }
+
+  return user;
+}
 
 /**
  * Authentication middleware
@@ -38,9 +64,34 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Env }> = async (c, ne
     }, 401);
   }
 
+  let user: SessionUser | null;
+  try {
+    user = await getValidSessionUser(c.env, session);
+  } catch (error) {
+    console.error('Session validation failed:', error);
+    return c.json({
+      success: false,
+      error: {
+        code: 'AUTH_UNAVAILABLE',
+        message: 'Authentication is temporarily unavailable',
+      },
+    }, 503);
+  }
+
+  if (!user) {
+    session.destroy();
+    return c.json({
+      success: false,
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'Authentication required',
+      },
+    }, 401);
+  }
+
   // Attach user info to context for use in route handlers
-  c.set('userId', session.userId);
-  c.set('username', session.username);
+  c.set('userId', user.id);
+  c.set('username', user.username);
 
   await next();
 };
@@ -57,8 +108,18 @@ export const optionalAuthMiddleware: MiddlewareHandler<{ Bindings: Env }> = asyn
   );
 
   if (session.isLoggedIn) {
-    c.set('userId', session.userId);
-    c.set('username', session.username);
+    try {
+      const user = await getValidSessionUser(c.env, session);
+      if (user) {
+        c.set('userId', user.id);
+        c.set('username', user.username);
+      } else {
+        session.destroy();
+      }
+    } catch (error) {
+      // Public reads remain available, but a database failure never grants admin visibility.
+      console.error('Optional session validation failed:', error);
+    }
   }
 
   await next();

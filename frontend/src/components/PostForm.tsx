@@ -1,12 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { postsApi, Media, PostWithRelations, TagWithCount, tagsApi } from "@/lib/api";
+import { postsApi, Media, PostWithRelations, TagCategory, TagWithCount, tagsApi } from "@/lib/api";
 import { MediaUploader } from "./MediaUploader";
 import { ImageCropper } from "./ImageCropper";
 import { uploadFileToMedia } from "@/lib/upload";
+import { groupTags } from "@/lib/tags";
 
 async function urlToFile(url: string, filename: string): Promise<File> {
   const res = await fetch(url);
@@ -186,10 +187,16 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
   );
   const [media, setMedia] = useState<Media[]>(editPost?.media ?? []);
   const [existingTags, setExistingTags] = useState<TagWithCount[]>([]);
+  const [tagCategories, setTagCategories] = useState<TagCategory[]>([]);
+  const [tagDisplayLimit, setTagDisplayLimit] = useState(8);
+  const [expandedTagGroups, setExpandedTagGroups] = useState<Set<string>>(new Set());
+  const [focusMode, setFocusMode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cropping, setCropping] = useState<{ mediaId: number; file: File } | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const cursorPositionRef = useRef(content.length);
 
   const detectedTags = Array.from(
     new Set(
@@ -205,6 +212,8 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
         const res = await tagsApi.list({ includePrivate: true });
         if (res.success && res.data) {
           setExistingTags(res.data.tags);
+          setTagCategories(res.data.categories);
+          setTagDisplayLimit(res.data.collapsedLimit);
         }
       } catch (fetchError) {
         console.error("Failed to load tag suggestions:", fetchError);
@@ -214,15 +223,38 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
     loadTags();
   }, []);
 
+  const tagGroups = useMemo(
+    () => groupTags(existingTags, tagCategories, tagDisplayLimit),
+    [existingTags, tagCategories, tagDisplayLimit]
+  );
+
+  useEffect(() => {
+    if (!focusMode) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [focusMode]);
+
   const insertTag = (tag: string) => {
     const normalizedTag = tag.replace(/^#/, "");
     const tagToken = `#${normalizedTag}`;
+    const exactTagPattern = new RegExp(`(^|\\s)#${normalizedTag}(?=\\s|$)`, "i");
+    if (exactTagPattern.test(content)) return;
 
-    setContent((prev) => {
-      if (prev.includes(tagToken)) return prev;
-      const trimmed = prev.trimEnd();
-      if (!trimmed) return tagToken;
-      return `${trimmed} ${tagToken}`;
+    const position = Math.min(cursorPositionRef.current, content.length);
+    const before = content.slice(0, position);
+    const after = content.slice(position);
+    const prefix = before && !/\s$/.test(before) ? " " : "";
+    const suffix = after && !/^\s/.test(after) ? " " : "";
+    const insertion = `${prefix}${tagToken}${suffix}`;
+    const nextCursor = position + insertion.length;
+    setContent(`${before}${insertion}${after}`);
+    cursorPositionRef.current = nextCursor;
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextCursor, nextCursor);
     });
   };
 
@@ -328,7 +360,13 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
   const charCount = content.length;
 
   return (
-    <form onSubmit={handleSubmit} className="surface-card-soft p-6 sm:p-8">
+    <form
+      onSubmit={handleSubmit}
+      className={focusMode
+        ? "fixed inset-0 z-[80] overflow-y-auto bg-[#f7f3ea] px-4 pb-[calc(2rem+var(--safe-bottom))] pt-[calc(1rem+var(--safe-top))] sm:px-8"
+        : "surface-card-soft p-6 sm:p-8"}
+    >
+      <div className={focusMode ? "mx-auto w-full max-w-4xl" : ""}>
       {error && (
         <div className="mb-5 rounded-[10px] bg-red-50 px-4 py-3 text-sm text-red-600">
           {error}
@@ -337,18 +375,36 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
 
       {/* Content textarea */}
       <div className="mb-4">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <label className="text-sm font-medium text-[#1f2430]">正文</label>
+          <button
+            type="button"
+            onClick={() => setFocusMode((value) => !value)}
+            className="text-sm font-semibold text-[#5d8fd6] hover:underline"
+          >
+            {focusMode ? "退出专注编辑" : "专注编辑"}
+          </button>
+        </div>
         <textarea
+          ref={textareaRef}
           autoFocus
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={(e) => {
+            setContent(e.target.value);
+            cursorPositionRef.current = e.currentTarget.selectionStart;
+          }}
+          onSelect={(e) => { cursorPositionRef.current = e.currentTarget.selectionStart; }}
+          onClick={(e) => { cursorPositionRef.current = e.currentTarget.selectionStart; }}
+          onKeyUp={(e) => { cursorPositionRef.current = e.currentTarget.selectionStart; }}
           onFocus={(e) => {
+            if (focusMode) return;
             const el = e.currentTarget;
             setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
           }}
           placeholder="分享你的想法..."
           rows={6}
           maxLength={10000}
-          className="field-input w-full resize-none px-5 py-4"
+          className={`field-input w-full px-5 py-4 ${focusMode ? "min-h-[calc(100dvh-8rem)] resize-none leading-7" : "resize-y"}`}
           disabled={submitting}
         />
         <div className="flex justify-end mt-1">
@@ -367,29 +423,51 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
         <label className="mb-2 block text-sm font-medium text-[#1f2430]">
           标签
         </label>
-        <p className="text-sm text-soft">
-          直接在正文里输入 `#标签`，系统会自动识别。
-        </p>
         {existingTags.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {existingTags.map((tag, index) => (
-              <button
-                key={tag.id}
-                type="button"
-                onClick={() => insertTag(tag.name)}
-                className={`rounded-full px-3 py-1.5 text-sm ${
-                  index % 4 === 0
-                    ? "bg-[#fff3ef] text-[#ef8f72]"
-                    : index % 4 === 1
-                      ? "bg-[#eef7ff] text-[#64b7ea]"
-                      : index % 4 === 2
-                        ? "bg-[#eefaf7] text-[#68c7b8]"
-                        : "bg-[#fff9ea] text-[#f1b94e]"
-                }`}
-              >
-                #{tag.name}
-              </button>
-            ))}
+          <div className="space-y-3">
+            {tagGroups.map((group) => {
+              const expanded = expandedTagGroups.has(group.key);
+              const visibleTags = expanded ? group.tags : group.tags.slice(0, group.collapsedLimit);
+              return (
+                <section key={group.key}>
+                  <p className="mb-2 text-xs font-semibold tracking-[0.12em] text-soft">{group.name}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {visibleTags.map((tag, index) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => insertTag(tag.name)}
+                        className={`rounded-full px-3 py-1.5 text-sm ${
+                          index % 4 === 0
+                            ? "bg-[#fff3ef] text-[#ef8f72]"
+                            : index % 4 === 1
+                              ? "bg-[#eef7ff] text-[#64b7ea]"
+                              : index % 4 === 2
+                                ? "bg-[#eefaf7] text-[#68c7b8]"
+                                : "bg-[#fff9ea] text-[#f1b94e]"
+                        }`}
+                      >
+                        #{tag.name}
+                      </button>
+                    ))}
+                  </div>
+                  {group.tags.length > group.collapsedLimit && (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedTagGroups((current) => {
+                        const next = new Set(current);
+                        if (next.has(group.key)) next.delete(group.key);
+                        else next.add(group.key);
+                        return next;
+                      })}
+                      className="mt-2 text-xs font-semibold text-[#5d8fd6] hover:underline"
+                    >
+                      {expanded ? "收起" : `展开其余 ${group.tags.length - group.collapsedLimit} 个`}
+                    </button>
+                  )}
+                </section>
+              );
+            })}
           </div>
         )}
       </div>
@@ -562,6 +640,7 @@ export function PostForm({ onSuccess, onCancel, editPost }: PostFormProps) {
             isEditing ? "保存" : "发布"
           )}
         </button>
+      </div>
       </div>
     </form>
   );

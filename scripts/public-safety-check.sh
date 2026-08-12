@@ -21,7 +21,7 @@ is_example_path() {
 
 is_allowed_sql() {
   case "$1" in
-    api/src/db/schema.sql|api/scripts/init-db.sql|api/scripts/add-pinned-column.sql) return 0 ;;
+    api/src/db/schema.sql|api/scripts/init-db.sql|api/scripts/add-pinned-column.sql|api/migrations/[0-9][0-9][0-9][0-9]_*.sql) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -67,6 +67,9 @@ scan_path() {
   base="$(basename "$path")"
 
   case "$path" in
+    api/wrangler.preview.toml|api/.preview-worker-secrets.local|api/.preview-production-refs.local|frontend/.preview-pages.local)
+      add_failure "$path: real Preview deployment configuration must stay out of git"
+      ;;
     */.env|*/.env.*|.env|.env.*)
       if ! is_example_path "$path"; then
         add_failure "$path: environment files must stay out of git"

@@ -4,6 +4,20 @@ import { optionalAuthMiddleware } from '../middleware/auth';
 
 export const mediaRouter = new Hono<{ Bindings: Env }>();
 
+function mediaError(
+  status: number,
+  code: string,
+  message: string,
+  headers?: HeadersInit
+) {
+  const responseHeaders = new Headers(headers);
+  responseHeaders.set('Cache-Control', 'no-store');
+  return Response.json({
+    success: false,
+    error: { code, message },
+  }, { status, headers: responseHeaders });
+}
+
 function parseRange(rangeHeader: string | undefined, size: number): { offset: number; length: number } | null {
   if (!rangeHeader) return null;
   const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
@@ -34,7 +48,7 @@ function parseRange(rangeHeader: string | undefined, size: number): { offset: nu
 function mediaCacheControl(visibility: string | null): string {
   return visibility === 'public'
     ? 'public, max-age=31536000, immutable'
-    : 'private, max-age=3600';
+    : 'private, no-store';
 }
 
 // GET /media/:id?v=<version>
@@ -51,14 +65,11 @@ function mediaCacheControl(visibility: string | null): string {
 mediaRouter.get('/:id', optionalAuthMiddleware, async (c) => {
   const db = c.env.DB;
   const idParam = c.req.param('id');
-  const id = parseInt(idParam, 10);
+  const id = Number(idParam);
   const isAuthenticated = c.get('userId') !== undefined;
 
-  if (isNaN(id)) {
-    return c.json(
-      { success: false, error: { code: 'INVALID_ID', message: 'Invalid media ID' } },
-      400
-    );
+  if (!Number.isInteger(id) || id <= 0) {
+    return mediaError(400, 'INVALID_ID', 'Invalid media ID');
   }
 
   const row = await db
@@ -80,38 +91,26 @@ mediaRouter.get('/:id', optionalAuthMiddleware, async (c) => {
     }>();
 
   if (!row) {
-    return c.json(
-      { success: false, error: { code: 'NOT_FOUND', message: 'Media not found' } },
-      404
-    );
+    return mediaError(404, 'NOT_FOUND', 'Media not found');
   }
 
   const requiresAuth = row.visibility === 'private' || row.post_id === null;
   if (requiresAuth && !isAuthenticated) {
-    return c.json(
-      { success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
-      401
-    );
+    return mediaError(401, 'UNAUTHORIZED', 'Authentication required');
   }
 
   // base64 兼容路径
   if (row.url.startsWith('data:')) {
     const match = /^data:([^;]+);base64,(.+)$/s.exec(row.url);
     if (!match) {
-      return c.json(
-        { success: false, error: { code: 'CORRUPT_DATA_URL', message: 'Malformed data URL' } },
-        500
-      );
+      return mediaError(500, 'CORRUPT_DATA_URL', 'Malformed data URL');
     }
     const [, mime, payload] = match;
     let binary: Uint8Array;
     try {
       binary = Uint8Array.from(atob(payload), (ch) => ch.charCodeAt(0));
     } catch {
-      return c.json(
-        { success: false, error: { code: 'BASE64_DECODE_FAILED', message: 'Invalid base64' } },
-        500
-      );
+      return mediaError(500, 'BASE64_DECODE_FAILED', 'Invalid base64');
     }
 
     return new Response(binary.buffer as ArrayBuffer, {
@@ -129,12 +128,8 @@ mediaRouter.get('/:id', optionalAuthMiddleware, async (c) => {
     const rangeHeader = c.req.header('Range');
     const range = parseRange(rangeHeader, row.size);
     if (rangeHeader && !range) {
-      return new Response(null, {
-        status: 416,
-        headers: {
-          'Content-Range': `bytes */${row.size}`,
-          'Cache-Control': mediaCacheControl(row.visibility),
-        },
+      return mediaError(416, 'INVALID_RANGE', 'Requested range is not satisfiable', {
+        'Content-Range': `bytes */${row.size}`,
       });
     }
     const object = await c.env.MEDIA_BUCKET.get(
@@ -143,10 +138,7 @@ mediaRouter.get('/:id', optionalAuthMiddleware, async (c) => {
     );
 
     if (!object) {
-      return c.json(
-        { success: false, error: { code: 'NOT_FOUND', message: 'Media object not found' } },
-        404
-      );
+      return mediaError(404, 'NOT_FOUND', 'Media object not found');
     }
 
     const headers = new Headers();
@@ -166,8 +158,5 @@ mediaRouter.get('/:id', optionalAuthMiddleware, async (c) => {
     return new Response(object.body, { headers });
   }
 
-  return c.json({
-    success: false,
-    error: { code: 'UNSUPPORTED_MEDIA_URL', message: 'Unsupported media storage format' },
-  }, 500);
+  return mediaError(500, 'UNSUPPORTED_MEDIA_URL', 'Unsupported media storage format');
 });

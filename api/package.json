@@ -6,6 +6,13 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "preview:preflight": "node ../scripts/preview-preflight.mjs",
+    "preview:preflight:test": "node ../scripts/preview-preflight.test.mjs",
+    "preview:dry-run": "npm run preview:preflight && wrangler deploy --config wrangler.preview.toml --dry-run",
+    "preview:db:migrate": "npm run preview:preflight && node ../scripts/d1-migration-guard.mjs DB --remote --config wrangler.preview.toml && wrangler d1 migrations apply DB --remote --config wrangler.preview.toml",
+    "preview:deploy": "npm run preview:preflight && wrangler deploy --config wrangler.preview.toml",
+    "db:migrations:test": "node ../scripts/d1-migrations.test.mjs",
+    "test:session-cookie": "node --test test/auth-cookie-options.test.cjs",
     "db:create": "wrangler d1 create microblog-db",
     "db:migrate": "wrangler d1 migrations apply microblog-db",
     "db:generate": "wrangler d1 migrations create microblog-db init",
@@ -19,7 +26,7 @@
   "dependencies": {
     "@hono/zod-validator": "^0.7.6",
     "bcryptjs": "^3.0.3",
-    "hono": "^4.12.12",
+    "hono": "^4.12.34",
     "iron-session": "^8.0.4",
     "zod": "^4.3.6"
   },

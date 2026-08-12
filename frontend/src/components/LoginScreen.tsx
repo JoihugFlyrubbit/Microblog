@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ApiError, authApi } from "@/lib/api";
 
@@ -83,9 +84,9 @@ export function LoginScreen() {
       <header className="glass-header sticky top-0 z-30">
         <div className="shell flex items-center justify-between gap-4 py-3 sm:py-4">
           <h1 className="text-[1rem] font-medium tracking-[-0.03em] text-[#1f2430] sm:text-[1.15rem]">管理员登录</h1>
-          <a href="/" className="text-sm font-semibold text-[#64b7ea] hover:text-[#4c9ecf]">
+          <Link href="/" className="text-sm font-semibold text-[#64b7ea] hover:text-[#4c9ecf]">
             返回公开首页
-          </a>
+          </Link>
         </div>
       </header>
 

@@ -14,6 +14,9 @@ export interface Env {
   SESSION_SECRET: string;
   ALLOW_ADMIN_BOOTSTRAP?: string;
   ALLOWED_ORIGINS?: string;
+  PROXY_SHARED_SECRET?: string;
+  ANALYTICS_RATE_LIMITER?: RateLimit;
+  LOGIN_RATE_LIMITER?: RateLimit;
   SESSION_SAME_SITE?: 'lax' | 'strict' | 'none';
   ENV_LOCATION_LABEL?: string;
   ENV_LATITUDE?: string;
@@ -38,6 +41,7 @@ export interface User {
   header_url: string;
   created_at: string;
   updated_at: string;
+  session_version: number;
 }
 
 export interface Post {
@@ -83,5 +87,6 @@ export interface PostWithRelations extends Post {
 export interface SessionData {
   userId: number;
   username: string;
+  sessionVersion: number;
   isLoggedIn: boolean;
 }

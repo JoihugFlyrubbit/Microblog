@@ -12,6 +12,12 @@
 !**/.env*.example
 !**/.dev.vars.example
 
+# local Preview deployment coordinates and secrets
+api/wrangler.preview.toml
+api/.preview-worker-secrets.local
+api/.preview-production-refs.local
+frontend/.preview-pages.local
+
 # dependencies
 **/node_modules/
 
